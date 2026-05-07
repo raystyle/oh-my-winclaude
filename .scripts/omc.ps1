@@ -111,6 +111,7 @@ $DevTools = @{
     pwsh        = 'powershell.ps1'
     pses        = 'pses.ps1'
     jupyter     = 'jupyter.ps1'
+    tslsp       = 'tslsp.ps1'
     vsbuild     = 'vsbuildtools.ps1'
 }
 
