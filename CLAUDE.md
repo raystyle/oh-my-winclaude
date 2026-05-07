@@ -71,6 +71,7 @@ $DevTools = @{                               # 独立脚本
     pwsh    = 'powershell.ps1'
     pses    = 'pses.ps1'
     jupyter = 'jupyter.ps1'
+    biome   = 'biome.ps1'
     tslsp   = 'tslsp.ps1'
     vsbuild = 'vsbuildtools.ps1'
 }
@@ -189,6 +190,7 @@ return @{
 - **pwsh** — PowerShell 7（GitHub Releases，MSI，attestation 验证）
 - **pses** — PowerShellEditorServices（GitHub Releases，zip 解压，注册 PSModulePath（含 Documents 路径保护））
 - **jupyter** — Jupyter（通过 `uv tool install`）
+- **biome** — Biome JS/TS linter & formatter（通过 `npm install -g` 安装 `@biomejs/biome`，复制 omc.exe 创建 shim exe）
 - **tslsp** — TypeScript LSP（通过 `npm install -g` 安装 typescript-language-server + typescript，复制 omc.exe 创建 shim exe 指向 `node.exe cli.mjs`）
 - **vsbuild** — VS Build Tools（离线布局，管理员提升）
 
