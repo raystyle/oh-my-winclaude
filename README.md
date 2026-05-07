@@ -95,6 +95,7 @@ omc 依赖的引导级工具，独立脚本，通过 dot-source 调度。
 | pwsh | PowerShell 7（GitHub Releases） |
 | pses | PowerShellEditorServices（GitHub Releases） |
 | jupyter | Jupyter（通过 `uv tool install`） |
+| tslsp | TypeScript LSP（npm + shim exe） |
 | vsbuild | VS Build Tools（离线布局） |
 
 ### PS 模块（PS Modules）
