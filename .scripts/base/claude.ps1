@@ -1812,7 +1812,9 @@ function Invoke-ClaudeHack {
     }
 
     $baseBin = Join-Path $script:OhmyRoot '.envs\base\bin'
+    $gitCmd = Join-Path $script:OhmyRoot '.envs\base\git\cmd'
     if ($env:Path -notlike "*$baseBin*") { $env:Path = "$baseBin;$env:Path" }
+    if ($env:Path -notlike "*$gitCmd*") { $env:Path = "$gitCmd;$env:Path" }
 
     $BuiltInMarketplaces = @('raystyle/Marketplaces', 'jarrodwatts/claude-hud')
 

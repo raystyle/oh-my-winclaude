@@ -6,7 +6,7 @@ return @{
     DisplayName     = 'nushell'
     ExeName         = 'nu.exe'
     Source          = 'github-release'
-    Repo            = 'raystyle/nushell-evo'
+    Repo            = 'raystyle/nushell-evo-bin'
     TagPrefix       = 'v'
     ExtractType     = 'standalone'
     KeepFiles       = @(
