@@ -56,7 +56,7 @@ $BaseTools = @('7z', 'git', 'gh', 'aria2')    # 数据驱动，.envs\base\bin
 
 $ToolDefs = @(                               # 数据驱动，.envs\tools\bin
     'ripgrep', 'jq', 'yq', 'fzf',
-    'mq', 'just', 'starship', 'rumdl', 'nushell', 'conclaude'
+    'mq', 'just', 'starship', 'rumdl', 'nushell', 'conclaude', 'bun'
 )
 
 $ToolScripts = @('duckdb')                  # 独立脚本
@@ -172,6 +172,7 @@ return @{
 - **rumdl** — Markdown lint/format 工具
 - **nushell** — Nushell fork（nushell-evo），含 MCP 日志和 browse 插件（`KeepFiles` 提取 `nu_plugin_*.exe`，`PostInstall` 注册插件，`PreUninstall` 清理插件）
 - **conclaude** — Claude Code 会话 guardrail 工具，通过 hook 系统 enforce linting、测试、格式化及文件保护规则
+- **bun** — JavaScript 运行时、打包器、测试运行器和包管理器（`TagPrefix = 'bun-v'`，`GetArchiveName` 固定 `bun-windows-x64.zip`，`PostInstall` 设置 `BUN_INSTALL`/`BUN_INSTALL_CACHE_DIR`/`BUN_RUNTIME_TRANSPILER_CACHE_PATH` 环境变量并将 `$BUN_INSTALL\bin` 加入 PATH，`PostUninstall` 清理环境变量、缓存和安装目录）
 
 ### 工具脚本（`$ToolScripts`）— `.scripts/tools/*.ps1`
 
@@ -212,7 +213,11 @@ return @{
 - `.cache/dev/<tool>/` — 开发工具缓存（node、git、duckdb、dotnet、rustup、pwsh、pses 等）
 - `.cache/dev/LocalRepo/` — 本地 PSRepository（`Install-Module` 用的 `.nupkg` 文件）
 - `.envs/base/bin/` — 引导可执行文件（7z.exe、git.exe、gh.exe、aria2c.exe）
-- `.envs/tools/bin/` — 工具可执行文件（rg.exe、jq.exe、fzf.exe 等）
+- `.envs/tools/bin/` — 工具可执行文件（rg.exe、jq.exe、fzf.exe、bun.exe 等）
+- `.envs/tools/bun/` — Bun 全局安装目录（`BUN_INSTALL`，通过 bun install -g 安装的包）
+- `.envs/tools/bun/bin/` — Bun 全局包可执行文件（加入 PATH）
+- `.cache/tools/bun/install/` — Bun 全局包缓存（`BUN_INSTALL_CACHE_DIR`）
+- `.cache/tools/bun/transpiler/` — Bun 转译器缓存（`BUN_RUNTIME_TRANSPILER_CACHE_PATH`）
 - `.envs/tools/duckdb/` — DuckDB 安装目录
 - `.envs/dev/bin/` — 开发工具 shim 可执行文件（加入用户 PATH）
 - `.envs/dev/<tool>/` — 开发工具安装目录（node/、git/、duckdb/、dotnet/、.rustup/、pses/ 等）

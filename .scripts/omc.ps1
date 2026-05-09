@@ -95,6 +95,7 @@ $ToolDefs = @(
     'rumdl'
     'nushell'
     'conclaude'
+    'bun'
 )
 
 $ToolScripts = @(
