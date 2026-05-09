@@ -582,7 +582,7 @@ function Set-ClaudeSettings {
                     $subVal = $subEntry.Value
                     if ($subVal -is [string[]] -or $subVal -is [array]) {
                         $existing = @()
-                        if ($sub.ContainsKey($subKey)) {
+                        if ($sub.Contains($subKey)) {
                             $existing = @($sub[$subKey])
                         }
                         $merged = [System.Collections.Generic.HashSet[string]]::new(
@@ -596,7 +596,7 @@ function Set-ClaudeSettings {
                             $changed = $true
                         }
                     } else {
-                        if (-not $sub.ContainsKey($subKey) -or $sub[$subKey] -ne $subVal) {
+                        if (-not $sub.Contains($subKey) -or $sub[$subKey] -ne $subVal) {
                             $sub[$subKey] = $subVal
                             $changed = $true
                         }
@@ -606,7 +606,7 @@ function Set-ClaudeSettings {
             continue
         }
 
-        if (-not $settings.ContainsKey($key) -or $settings[$key] -ne $val) {
+        if (-not $settings.Contains($key) -or $settings[$key] -ne $val) {
             $settings[$key] = $val
             $changed = $true
         }
