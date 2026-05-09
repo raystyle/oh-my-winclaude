@@ -484,7 +484,7 @@ function Show-ConfigStatus {
                             'effortLevel', 'autoMemoryEnabled')
             foreach ($sk in $simpleKeys) {
                 $val = $s.PSObject.Properties | Where-Object { $_.Name -eq $sk }
-                if ($val -and $val.Value -ne $null) {
+                if ($null -ne $val -and $null -ne $val.Value) {
                     Write-Host "  [OK] $sk = $($val.Value)" -ForegroundColor Green
                 } else {
                     Write-Host "  [INFO] $sk = (not set)" -ForegroundColor Yellow
