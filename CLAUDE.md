@@ -186,7 +186,7 @@ return @{
 - **rumdl** — Markdown lint/format 工具
 - **nushell** — Nushell fork（nushell-evo），含 MCP 日志和 browse 插件（`KeepFiles` 提取 `nu_plugin_*.exe`，`PostInstall` 注册插件，`PreUninstall` 清理插件）
 - **conclaude** — Claude Code 会话 guardrail 工具，通过 hook 系统 enforce linting、测试、格式化及文件保护规则
-- **bun** — JavaScript 运行时、打包器、测试运行器和包管理器（`TagPrefix = 'bun-v'`，`GetArchiveName` 固定 `bun-windows-x64.zip`，`PostInstall` 设置 `BUN_INSTALL`/`BUN_INSTALL_CACHE_DIR`/`BUN_RUNTIME_TRANSPILER_CACHE_PATH` 环境变量并将 `$BUN_INSTALL\bin` 加入 PATH，`PostUninstall` 清理环境变量、缓存和安装目录）
+- **bun** — JavaScript 运行时、打包器、测试运行器和包管理器（`TagPrefix = 'bun-v'`，`GetArchiveName` 固定 `bun-windows-x64.zip`，`PostInstall` 设置 `BUN_INSTALL`/`BUN_INSTALL_CACHE_DIR`/`BUN_RUNTIME_TRANSPILER_CACHE_PATH` 环境变量并将 `$BUN_INSTALL\bin` 加入 PATH，写入 `~/.bunfig.toml` 配置 npmmirror 镜像源，`PostUninstall` 清理环境变量、缓存、安装目录和 bunfig）
 
 ### 工具脚本（`$ToolScripts`）— `.scripts/tools/*.ps1`
 

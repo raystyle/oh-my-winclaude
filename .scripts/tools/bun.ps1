@@ -43,6 +43,27 @@ return @{
         }
 
         Add-UserPath -Dir $bunBinDir
+
+        # Write global bunfig.toml with npmmirror registry
+        $bunfigPath = Join-Path $env:USERPROFILE '.bunfig.toml'
+        $bunfigContent = @'
+[install]
+registry = "https://registry.npmmirror.com"
+'@
+        $writeBunfig = $true
+        if (Test-Path $bunfigPath) {
+            $existing = Get-Content $bunfigPath -Raw -ErrorAction SilentlyContinue
+            if ($existing -and $existing -match 'registry\s*=\s*"https://registry\.npmmirror\.com"') {
+                $writeBunfig = $false
+            }
+        }
+        if ($writeBunfig) {
+            $noBom = New-Object System.Text.UTF8Encoding $false
+            [System.IO.File]::WriteAllText($bunfigPath, $bunfigContent, $noBom)
+            Write-Host "[OK] ~/.bunfig.toml: registry = npmmirror" -ForegroundColor Green
+        } else {
+            Write-Host "[OK] ~/.bunfig.toml: already configured" -ForegroundColor DarkGray
+        }
     }
     PostUninstall  = {
         param($ToolDef, $RootDir)
@@ -66,6 +87,12 @@ return @{
         if (Test-Path $bunInstall) {
             Remove-Item $bunInstall -Recurse -Force -ErrorAction SilentlyContinue
             Write-Host "[OK] Removed: $bunInstall" -ForegroundColor Green
+        }
+
+        $bunfigPath = Join-Path $env:USERPROFILE '.bunfig.toml'
+        if (Test-Path $bunfigPath) {
+            Remove-Item $bunfigPath -Force -ErrorAction SilentlyContinue
+            Write-Host "[OK] Removed: $bunfigPath" -ForegroundColor Green
         }
     }
 }
