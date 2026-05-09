@@ -514,6 +514,32 @@ $script:ClaudeSettingsDefaults = [ordered]@{
     alwaysThinkingEnabled  = $true
     effortLevel            = 'high'
     autoMemoryEnabled      = $true
+    permissions            = [ordered]@{
+        allow = [string[]]@(
+            'Read(*)'
+            'Write(*)'
+            'Grep(*)'
+            'Glob(*)'
+            'Edit(*)'
+            'Bash(git *)'
+            'Bash(ls *)'
+            'Bash(powershell *)'
+            'Bash(pwsh *)'
+            'Bash(omc *)'
+            'Bash(rustfmt *)'
+            'Bash(cargo *)'
+        )
+        deny = [string[]]@(
+            'Read(./.env)'
+            'Read(./.env.*)'
+            'Read(./secrets/**)'
+            'Read(**/*.key)'
+            'Read(**/*.pem)'
+            'Bash(rm -rf /*)'
+            'Bash(curl *)'
+            'Bash(wget *)'
+        )
+    }
 }
 
 function Set-ClaudeSettings {
@@ -540,15 +566,55 @@ function Set-ClaudeSettings {
 
     $changed = $false
     foreach ($entry in $script:ClaudeSettingsDefaults.GetEnumerator()) {
-        if (-not $settings.ContainsKey($entry.Key) -or $settings[$entry.Key] -ne $entry.Value) {
-            $settings[$entry.Key] = $entry.Value
+        $key = $entry.Key
+        $val = $entry.Value
+
+        if ($val -is [System.Collections.IDictionary]) {
+            $sub = $settings[$key]
+            if ($null -eq $sub) {
+                $settings[$key] = $val
+                $changed = $true
+                continue
+            }
+            if ($sub -is [System.Collections.IDictionary]) {
+                foreach ($subEntry in $val.GetEnumerator()) {
+                    $subKey = $subEntry.Key
+                    $subVal = $subEntry.Value
+                    if ($subVal -is [string[]] -or $subVal -is [array]) {
+                        $existing = @()
+                        if ($sub.ContainsKey($subKey)) {
+                            $existing = @($sub[$subKey])
+                        }
+                        $merged = [System.Collections.Generic.HashSet[string]]::new(
+                            [StringComparer]::OrdinalIgnoreCase
+                        )
+                        $merged.UnionWith([string[]]$existing)
+                        $before = $merged.Count
+                        $merged.UnionWith([string[]]$subVal)
+                        if ($merged.Count -ne $before) {
+                            $sub[$subKey] = [string[]]@($merged)
+                            $changed = $true
+                        }
+                    } else {
+                        if (-not $sub.ContainsKey($subKey) -or $sub[$subKey] -ne $subVal) {
+                            $sub[$subKey] = $subVal
+                            $changed = $true
+                        }
+                    }
+                }
+            }
+            continue
+        }
+
+        if (-not $settings.ContainsKey($key) -or $settings[$key] -ne $val) {
+            $settings[$key] = $val
             $changed = $true
         }
     }
 
     if ($changed) {
         $noBom = New-Object System.Text.UTF8Encoding $false
-        [System.IO.File]::WriteAllText($script:ClaudeSettingsPath, ($settings | ConvertTo-Json), $noBom)
+        [System.IO.File]::WriteAllText($script:ClaudeSettingsPath, ($settings | ConvertTo-Json -Depth 5), $noBom)
         Write-Host "  [OK] settings.json updated" -ForegroundColor Green
     } else {
         Write-Host "  [OK] settings.json up to date" -ForegroundColor DarkGray

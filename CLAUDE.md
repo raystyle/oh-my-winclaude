@@ -140,8 +140,10 @@ omc 在引导早期依赖的引导级工具。独立脚本，自行管理配置�
 | `alwaysThinkingEnabled` | `true` | 始终启用思考模式 |
 | `effortLevel` | `high` | 推理努力级别 |
 | `autoMemoryEnabled` | `true` | 自动记忆功能 |
+| `permissions.allow` | `Read(*)`, `Write(*)`, `Grep(*)`, `Glob(*)`, `Edit(*)`, `Bash(git/ls/pwsh/omc/rustfmt/cargo *)` | 自动放行常用工具 |
+| `permissions.deny` | `.env`, `.key`, `.pem`, `rm -rf /*`, `curl/wget *` | 保护敏感文件和危险操作 |
 
-`Set-ClaudeSettings` 函数读取现有 settings.json，合并默认值，不覆盖用户手动添加的其他字段。
+`Set-ClaudeSettings` 函数读取现有 settings.json，合并默认值（`permissions.allow/deny` 用 HashSet 去重合并），不覆盖用户手动添加的其他字段。
 
 ### 基础工具（`$BaseTools`）— `.scripts/base/*.ps1`
 
