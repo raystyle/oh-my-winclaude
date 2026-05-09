@@ -10,3 +10,6 @@
 
 # Claude Code local settings
 .claude/
+
+# PSES session file
+PowerShellEditorServices.json
