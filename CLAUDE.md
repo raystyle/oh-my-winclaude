@@ -224,14 +224,14 @@ return @{
 - `.config/` — dotfile 配置（starship.toml、psmux）
 - `.cache/base/<tool>/` — 基础工具缓存（gh、git、hosts、uv、claude）
 - `.cache/tools/<tool>/` — 工具缓存（ripgrep、jq、fzf、mq 等）
+- `.cache/tools/bun/install/` — Bun 全局包缓存（`BUN_INSTALL_CACHE_DIR`）
+- `.cache/tools/bun/transpiler/` — Bun 转译器缓存（`BUN_RUNTIME_TRANSPILER_CACHE_PATH`）
 - `.cache/dev/<tool>/` — 开发工具缓存（node、git、duckdb、dotnet、rustup、pwsh、pses 等）
 - `.cache/dev/LocalRepo/` — 本地 PSRepository（`Install-Module` 用的 `.nupkg` 文件）
 - `.envs/base/bin/` — 引导可执行文件（7z.exe、git.exe、gh.exe、aria2c.exe）
 - `.envs/tools/bin/` — 工具可执行文件（rg.exe、jq.exe、fzf.exe、bun.exe 等）
 - `.envs/tools/bun/` — Bun 全局安装目录（`BUN_INSTALL`，通过 bun install -g 安装的包）
 - `.envs/tools/bun/bin/` — Bun 全局包可执行文件（加入 PATH）
-- `.cache/tools/bun/install/` — Bun 全局包缓存（`BUN_INSTALL_CACHE_DIR`）
-- `.cache/tools/bun/transpiler/` — Bun 转译器缓存（`BUN_RUNTIME_TRANSPILER_CACHE_PATH`）
 - `.envs/tools/duckdb/` — DuckDB 安装目录
 - `.envs/dev/bin/` — 开发工具 shim 可执行文件（加入用户 PATH）
 - `.envs/dev/<tool>/` — 开发工具安装目录（node/、git/、duckdb/、dotnet/、.rustup/、pses/ 等）

@@ -80,6 +80,7 @@ omc 依赖的引导级工具，独立脚本，通过 dot-source 调度。
 | rumdl | Markdown lint/format 工具 |
 | nushell | Nushell fork（nushell-evo），含 MCP 日志和 browse 插件 |
 | conclaude | Claude Code 会话 guardrail 工具，通过 hook 系统 enforce linting、测试、格式化及文件保护规则 |
+| bun | JavaScript 运行时、打包器、测试运行器和包管理器（npmmirror 镜像源） |
 | duckdb | DuckDB CLI（独立脚本） |
 
 ### 开发工具（Dev Tools）
