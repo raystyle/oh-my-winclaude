@@ -131,6 +131,18 @@ omc 在引导早期依赖的引导级工具。独立脚本，自行管理配置�
 
 配置存储在用户环境变量（`[Environment]::SetEnvironmentVariable(..., "User")`）中。`omc setup claude` 流程：已配置时提供 (K)eep / (R)eplace 选项，未配置时直接打开 GUI 编辑器。
 
+**settings.json 配置**（`install`/`update`/`setup` 时自动设置，幂等合并到 `~/.claude/settings.json`）：
+
+| 设置项 | 默认值 | 说明 |
+|--------|--------|------|
+| `showThinkingSummaries` | `true` | 显示 thinking 摘要 |
+| `viewMode` | `verbose` | 详细输出模式 |
+| `alwaysThinkingEnabled` | `true` | 始终启用思考模式 |
+| `effortLevel` | `high` | 推理努力级别 |
+| `autoMemoryEnabled` | `true` | 自动记忆功能 |
+
+`Set-ClaudeSettings` 函数读取现有 settings.json，合并默认值，不覆盖用户手动添加的其他字段。
+
 ### 基础工具（`$BaseTools`）— `.scripts/base/*.ps1`
 
 数据驱动工具，返回哈希表。通过 `Invoke-BaseTool` -> `Import-ToolDefinition` -> `core.ps1` 生命周期引擎调度。安装到 `.envs\base\bin`。

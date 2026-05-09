@@ -506,6 +506,55 @@ function Set-ConfigItem {
     $true
 }
 
+$script:ClaudeSettingsPath = Join-Path $env:USERPROFILE '.claude\settings.json'
+
+$script:ClaudeSettingsDefaults = [ordered]@{
+    showThinkingSummaries  = $true
+    viewMode               = 'verbose'
+    alwaysThinkingEnabled  = $true
+    effortLevel            = 'high'
+    autoMemoryEnabled      = $true
+}
+
+function Set-ClaudeSettings {
+    <#
+    .SYNOPSIS
+        Apply default settings to ~/.claude/settings.json (idempotent merge).
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param()
+
+    $settingsDir = Split-Path $script:ClaudeSettingsPath -Parent
+    if (-not (Test-Path $settingsDir)) {
+        New-Item -ItemType Directory -Path $settingsDir -Force | Out-Null
+    }
+
+    $settings = [ordered]@{}
+    if (Test-Path $script:ClaudeSettingsPath) {
+        try {
+            $existing = Get-Content $script:ClaudeSettingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            $existing.PSObject.Properties | ForEach-Object { $settings[$_.Name] = $_.Value }
+        } catch {}
+    }
+
+    $changed = $false
+    foreach ($entry in $script:ClaudeSettingsDefaults.GetEnumerator()) {
+        if (-not $settings.ContainsKey($entry.Key) -or $settings[$entry.Key] -ne $entry.Value) {
+            $settings[$entry.Key] = $entry.Value
+            $changed = $true
+        }
+    }
+
+    if ($changed) {
+        $noBom = New-Object System.Text.UTF8Encoding $false
+        [System.IO.File]::WriteAllText($script:ClaudeSettingsPath, ($settings | ConvertTo-Json), $noBom)
+        Write-Host "  [OK] settings.json updated" -ForegroundColor Green
+    } else {
+        Write-Host "  [OK] settings.json up to date" -ForegroundColor DarkGray
+    }
+}
+
 function Set-DefaultConfig {
     <#
     .SYNOPSIS
@@ -566,6 +615,8 @@ function Set-DefaultConfig {
     if (-not $changed) {
         Write-Host "  [OK] All defaults up to date" -ForegroundColor Green
     }
+
+    Set-ClaudeSettings
 }
 
 function Read-CustomConfig {
