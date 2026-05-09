@@ -474,6 +474,36 @@ function Show-ConfigStatus {
     } else {
         Write-Host "  [INFO] Not completed" -ForegroundColor Yellow
     }
+
+    # settings.json
+    Write-Host "`n  Settings (settings.json):" -ForegroundColor Cyan
+    if (Test-Path $script:ClaudeSettingsPath) {
+        try {
+            $s = Get-Content $script:ClaudeSettingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            $simpleKeys = @('showThinkingSummaries', 'viewMode', 'alwaysThinkingEnabled',
+                            'effortLevel', 'autoMemoryEnabled')
+            foreach ($sk in $simpleKeys) {
+                $val = $s.PSObject.Properties | Where-Object { $_.Name -eq $sk }
+                if ($val -and $val.Value -ne $null) {
+                    Write-Host "  [OK] $sk = $($val.Value)" -ForegroundColor Green
+                } else {
+                    Write-Host "  [INFO] $sk = (not set)" -ForegroundColor Yellow
+                }
+            }
+            if ($s.permissions) {
+                $allowCount = @($s.permissions.allow).Count
+                $denyCount = @($s.permissions.deny).Count
+                Write-Host "  [OK] permissions.allow: $allowCount rule(s)" -ForegroundColor Green
+                Write-Host "  [OK] permissions.deny:  $denyCount rule(s)" -ForegroundColor Green
+            } else {
+                Write-Host "  [INFO] permissions = (not set)" -ForegroundColor Yellow
+            }
+        } catch {
+            Write-Host "  [WARN] Could not read settings.json" -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "  [INFO] settings.json not found" -ForegroundColor Yellow
+    }
 }
 
 function Set-ConfigItem {
