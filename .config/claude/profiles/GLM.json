@@ -1,0 +1,19 @@
+{
+    "name":  "GLM",
+    "description":  "Zhipu GLM-5.1 via bigmodel.cn (default)",
+    "env":  {
+                "ANTHROPIC_AUTH_TOKEN":  "",
+                "ANTHROPIC_BASE_URL":  "https://open.bigmodel.cn/api/anthropic",
+                "ANTHROPIC_DEFAULT_HAIKU_MODEL":  "glm-4.5-air",
+                "ANTHROPIC_DEFAULT_SONNET_MODEL":  "glm-5-turbo",
+                "ANTHROPIC_DEFAULT_OPUS_MODEL":  "glm-5.1",
+                "CLAUDE_CODE_DISABLE_1M_CONTEXT":  "1",
+                "CLAUDE_CODE_DISABLE_INTERLEAVED_THINKING":  "1",
+                "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING":  "1",
+                "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY":  "1"
+            },
+    "settings":  {
+                     "alwaysThinkingEnabled":  false,
+                     "effortLevel":  "medium"
+                 }
+}

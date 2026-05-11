@@ -36,6 +36,7 @@ omc uninstall [工具|分组]   # 卸载工具（保留锁定和缓存）
 omc download <工具> <版本>  # 下载指定版本到缓存（不安装）
 omc lock <工具> [版本]      # 查看/锁定版本
 omc setup claude           # 配置 Claude Code（GUI 编辑器）
+omc switch claude          # 切换 Claude Code 配置 Profile
 omc hack claude            # 插件市场管理器（GUI）
 omc help                   # 显示用法
 ```
@@ -51,7 +52,7 @@ omc 依赖的引导级工具，独立脚本，通过 dot-source 调度。
 | 工具 | 说明 |
 |------|------|
 | uv | Python 包管理器和 Python 版本管理 |
-| claude | Claude Code CLI（通过 uv 安装，`omc setup claude` 配置，`omc hack claude` 插件市场） |
+| claude | Claude Code CLI（通过 uv 安装，`omc setup claude` 配置，`omc switch claude` 切换 Profile，`omc hack claude` 插件市场） |
 
 ### 基础工具（Base Tools）
 
@@ -173,7 +174,29 @@ omc uninstall duckdb
 
 # 配置 Claude Code（打开 GUI 编辑器）
 omc setup claude
+
+# 切换 Claude Code 配置 Profile（GLM / DeepSeek 等）
+omc switch claude
 ```
+
+## Claude Code 配置 Profile
+
+支持多个 API 提供商配置的一键切换。内置 GLM 和 DeepSeek 两个预设 Profile，也可通过 `omc setup claude` 保存自定义 Profile。
+
+| Profile | 模型 | 1M 上下文 | Thinking |
+|---------|------|-----------|----------|
+| GLM | glm-4.5-air / glm-5-turbo / glm-5.1 | 禁用 | 禁用 |
+| DeepSeek | deepseek-v4-flash / deepseek-v4-pro[1m] | 启用 | 启用 |
+
+```powershell
+# 交互式切换 Profile（WinForms 对话框）
+omc switch claude
+
+# 配置后保存为新 Profile
+omc setup claude
+```
+
+Profile 存储在 `.config/claude/profiles/` 目录。切换仅覆盖 Provider 相关配置（API 凭证、模型、1M/thinking 开关），通用偏好（viewMode、permissions、telemetry 等）不受影响。
 
 ## 添加新工具
 

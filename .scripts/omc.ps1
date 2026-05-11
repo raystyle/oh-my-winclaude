@@ -148,6 +148,7 @@ function Show-Help {
     Write-Host '    omc download <tool> <version>' -ForegroundColor DarkGray
     Write-Host '    omc lock <tool>      show/lock version' -ForegroundColor DarkGray
     Write-Host '    omc sync <dest>      sync project to destination' -ForegroundColor DarkGray
+    Write-Host '    omc switch claude    switch Claude Code profile' -ForegroundColor DarkGray
     Write-Host ''
     Write-Host '  GROUPS:' -ForegroundColor Yellow
     Write-Host "    base                 $($BaseScripts + $BaseTools -join ', ')" -ForegroundColor DarkGray
@@ -647,7 +648,7 @@ $tool  = if ($args.Count -gt 1) { $args[1] } else { '' }
 $extra = if ($args.Count -gt 2) { $args[2..($args.Count - 1)] -join ' ' } else { '' }
 
 $AllToolNames = @($BaseScripts) + @($BaseTools) + @($Tools) + @($DevTools.Keys) + @($PsModules.Keys) + @('base', 'tool', 'dev')
-$KnownCmds = @('init', 'help', 'check', 'install', 'update', 'uninstall', 'download', 'lock', 'setup', 'sync', 'hack')
+$KnownCmds = @('init', 'help', 'check', 'install', 'update', 'uninstall', 'download', 'lock', 'setup', 'sync', 'switch', 'hack')
 
 $GroupNames = @('base', 'tool', 'dev')
 
@@ -814,6 +815,7 @@ if ($BaseScripts -contains $tool) {
             'update'    { & $scriptPath update }
             'uninstall' { & $scriptPath uninstall }
             'setup'     { & $scriptPath setup }
+            'switch'    { & $scriptPath switch }
             'hack'      { & $scriptPath hack }
             default     { Write-Host "[ERROR] Unknown command '$cmd' for $tool" -ForegroundColor Red; exit 1 }
         }

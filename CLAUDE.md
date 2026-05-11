@@ -20,6 +20,7 @@ omc uninstall [工具|分组]   # 卸载工具（保留锁定和缓存）
 omc download <工具> <版本>  # 下载指定版本到缓存
 omc lock <工具> [版本]      # 查看/锁定版本
 omc setup claude           # 配置 Claude Code（GUI 编辑器）
+omc switch claude          # 切换 Claude Code 配置 Profile
 omc help                   # 显示用法
 
 分组：base、tool、dev
@@ -113,6 +114,10 @@ omc 在引导早期依赖的引导级工具。独立脚本，自行管理配置�
 | `DISABLE_AUTO_COMPACT` | `1` | 禁用自动上下文压缩 |
 | `DISABLE_FEEDBACK_SURVEY` | `1` | 禁用反馈调查 |
 | `CLAUDE_CODE_DISABLE_1M_CONTEXT` | `1` | 禁用 1M 上下文窗口 |
+| `CLAUDE_CODE_DISABLE_INTERLEAVED_THINKING` | `1` | 禁用交替思考（GLM 代理不支持） |
+| `CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING` | `1` | 禁用自适应思考（GLM 代理不支持） |
+| `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY` | `1` | 启用网关模型发现 |
+| `BASH_MAX_OUTPUT_LENGTH` | `20000` | Bash 输出最大长度，防止上下文溢出 |
 | `MCP_TIMEOUT` | `60000` | MCP 服务器超时 |
 | `PYTHONUTF8` | `1` | Python UTF-8 模式 |
 | `PYTHONIOENCODING` | `utf-8` | Python 编码 |
@@ -137,13 +142,53 @@ omc 在引导早期依赖的引导级工具。独立脚本，自行管理配置�
 |--------|--------|------|
 | `showThinkingSummaries` | `true` | 显示 thinking 摘要 |
 | `viewMode` | `verbose` | 详细输出模式 |
-| `alwaysThinkingEnabled` | `true` | 始终启用思考模式 |
-| `effortLevel` | `high` | 推理努力级别 |
+| `alwaysThinkingEnabled` | `false` | 始终启用思考模式 |
+| `effortLevel` | `medium` | 推理努力级别 |
 | `autoMemoryEnabled` | `true` | 自动记忆功能 |
 | `permissions.allow` | `Read(*)`, `Write(*)`, `Grep(*)`, `Glob(*)`, `Edit(*)`, `Bash(git/ls/pwsh/omc/rustfmt/cargo *)` | 自动放行常用工具 |
 | `permissions.deny` | `.env`, `.key`, `.pem`, `rm -rf /*`, `curl/wget *` | 保护敏感文件和危险操作 |
 
 `Set-ClaudeSettings` 函数读取现有 settings.json，合并默认值（`permissions.allow/deny` 用 HashSet 去重合并），不覆盖用户手动添加的其他字段。
+
+#### 配置 Profile 系统
+
+支持多个 API 提供商配置的一键切换。Profile 存储在 `.config/claude/profiles/` 目录，每个 Profile 是一个 JSON 文件，包含 Provider 相关的环境变量和 settings.json 覆盖项。
+
+**内置 Profile：**
+
+| Profile | 模型 | 1M 上下文 | Thinking |
+|---------|------|-----------|----------|
+| GLM | glm-4.5-air / glm-5-turbo / glm-5.1 | 禁用 | 禁用 |
+| DeepSeek | deepseek-v4-flash / deepseek-v4-pro[1m] | 启用 | 启用 |
+
+**Profile JSON 格式**（`.config/claude/profiles/<Name>.json`）：
+
+```json
+{
+    "name": "DeepSeek",
+    "description": "DeepSeek V4 with 1M context and interleaved thinking",
+    "env": {
+        "ANTHROPIC_BASE_URL": "https://api.deepseek.com/anthropic",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL": "deepseek-v4-flash",
+        "ANTHROPIC_DEFAULT_SONNET_MODEL": "deepseek-v4-pro[1m]",
+        "ANTHROPIC_DEFAULT_OPUS_MODEL": "deepseek-v4-pro[1m]",
+        "CLAUDE_CODE_DISABLE_1M_CONTEXT": "0",
+        "CLAUDE_CODE_DISABLE_INTERLEAVED_THINKING": "0",
+        "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING": "0",
+        "CLAUDE_CODE_SUBAGENT_MODEL": "deepseek-v4-flash"
+    },
+    "settings": {
+        "alwaysThinkingEnabled": true,
+        "effortLevel": "max"
+    }
+}
+```
+
+Profile 仅覆盖 Provider 相关配置（API 凭证、模型名、1M/thinking 开关、effortLevel）。通用配置（viewMode=verbose、permissions、telemetry、timeouts 等）不受 Profile 切换影响。
+
+- `omc switch claude` — WinForms 对话框选择 Profile，一键切换
+- `omc setup claude` — 配置完成后提示保存为命名 Profile
+- Active profile 标记在 `.config/claude/config.json` 的 `active_profile` 字段
 
 ### 基础工具（`$BaseTools`）— `.scripts/base/*.ps1`
 
@@ -220,6 +265,7 @@ return @{
 ### 关键目录
 
 - `.config/<tool>/config.json` — 各工具的配置和锁定文件（所有工具：base、tools、dev）
+- `.config/claude/profiles/*.json` — Claude Code 配置 Profile（GLM、DeepSeek 等）
 - `.config/omc/config.json` — omc 全局配置（prefix）
 - `.config/` — dotfile 配置（starship.toml、psmux）
 - `.cache/base/<tool>/` — 基础工具缓存（gh、git、hosts、uv、claude）

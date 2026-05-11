@@ -10,7 +10,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("check", "download", "install", "update", "uninstall", "setup", "hack")]
+    [ValidateSet("check", "download", "install", "update", "uninstall", "setup", "switch", "hack")]
     [string]$Command = "check",
 
     [switch]$Force
@@ -82,6 +82,7 @@ function Get-ClaudeLock {
                 ClaudeVersion = if ($cfg.claude_version) { $cfg.claude_version } else { $cfg.lock }
                 SdkVersion    = $cfg.sdk_version
                 SHA256        = $cfg.sha256
+                ActiveProfile = $cfg.active_profile
             }
         }
     } catch {}
@@ -108,13 +109,22 @@ function Set-ClaudeLock {
     if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
     $noBom = New-Object System.Text.UTF8Encoding $false
     $lockStr = "$ClaudeVersion/$SdkVersion"
-    $json = @{
+    $json = [ordered]@{
         lock           = $lockStr
         claude_version = $ClaudeVersion
         sdk_version    = $SdkVersion
         sha256         = $SHA256
-    } | ConvertTo-Json
-    [System.IO.File]::WriteAllText($script:ClaudeLockPath, $json.Trim(), $noBom)
+    }
+    # Preserve active_profile if it exists
+    if (Test-Path $script:ClaudeLockPath) {
+        try {
+            $existing = Get-Content $script:ClaudeLockPath -Raw -ErrorAction SilentlyContinue | ConvertFrom-Json
+            if ($existing.active_profile) {
+                $json['active_profile'] = $existing.active_profile
+            }
+        } catch {}
+    }
+    [System.IO.File]::WriteAllText($script:ClaudeLockPath, ($json | ConvertTo-Json).Trim(), $noBom)
 }
 
 function Get-SdkLatestVersion {
@@ -225,6 +235,20 @@ print(f'Extracted: {dst} ({size_mb} MB)')
 
 $script:ClaudeDefaultBaseUrl = "https://open.bigmodel.cn/api/anthropic"
 $script:ClaudeJsonPath = Join-Path $env:USERPROFILE ".claude.json"
+$script:ProfileDir = Join-Path $script:OhmyRoot '.config\claude\profiles'
+
+$script:ProfileEnvKeys = @(
+    'ANTHROPIC_AUTH_TOKEN',
+    'ANTHROPIC_BASE_URL',
+    'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+    'ANTHROPIC_DEFAULT_SONNET_MODEL',
+    'ANTHROPIC_DEFAULT_OPUS_MODEL',
+    'CLAUDE_CODE_DISABLE_1M_CONTEXT',
+    'CLAUDE_CODE_DISABLE_INTERLEAVED_THINKING',
+    'CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING',
+    'CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY',
+    'CLAUDE_CODE_SUBAGENT_MODEL'
+)
 
 $script:ConfigItems = @{
     # ── API ──
@@ -296,6 +320,26 @@ $script:ConfigItems = @{
         Description = "Disable 1M context window (unsupported by GLM)"
         Type = "env"
     }
+    CLAUDE_CODE_DISABLE_INTERLEAVED_THINKING = @{
+        Default = "1"
+        Description = "Disable interleaved thinking (unsupported by GLM proxy)"
+        Type = "env"
+    }
+    CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING = @{
+        Default = "1"
+        Description = "Disable adaptive thinking (unsupported by GLM proxy)"
+        Type = "env"
+    }
+    CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY = @{
+        Default = "1"
+        Description = "Enable accurate model discovery via gateway"
+        Type = "env"
+    }
+    BASH_MAX_OUTPUT_LENGTH = @{
+        Default = "20000"
+        Description = "Max Bash output length to prevent context overflow"
+        Type = "env"
+    }
     MCP_TIMEOUT = @{
         Default = "60000"
         Description = "MCP server communication timeout (ms)"
@@ -352,6 +396,12 @@ $script:ConfigItems = @{
         Default = "glm-5.1"
         Description = "Default Opus model"
         Type = "model"
+    }
+    # ── Subagent model ──
+    CLAUDE_CODE_SUBAGENT_MODEL = @{
+        Default = ""
+        Description = "Default subagent model (empty = same as Sonnet)"
+        Type = "env"
     }
 }
 
@@ -504,6 +554,20 @@ function Show-ConfigStatus {
     } else {
         Write-Host "  [INFO] settings.json not found" -ForegroundColor Yellow
     }
+
+    # Profiles
+    Write-Host "`n  Profiles:" -ForegroundColor Cyan
+    $activeProfile = Get-ActiveProfile
+    if ($activeProfile) {
+        Write-Host "  [OK] Active: $activeProfile" -ForegroundColor Green
+    } else {
+        Write-Host "  [INFO] No active profile" -ForegroundColor Yellow
+    }
+    try {
+        $profiles = Get-ClaudeProfileList
+        $names = ($profiles | ForEach-Object { $_.Name }) -join ', '
+        Write-Host "  Available: $names" -ForegroundColor DarkGray
+    } catch {}
 }
 
 function Set-ConfigItem {
@@ -541,8 +605,8 @@ $script:ClaudeSettingsPath = Join-Path $env:USERPROFILE '.claude\settings.json'
 $script:ClaudeSettingsDefaults = [ordered]@{
     showThinkingSummaries  = $true
     viewMode               = 'verbose'
-    alwaysThinkingEnabled  = $true
-    effortLevel            = 'high'
+    alwaysThinkingEnabled  = $false
+    effortLevel            = 'medium'
     autoMemoryEnabled      = $true
     permissions            = [ordered]@{
         allow = [string[]]@(
@@ -718,7 +782,7 @@ function Set-DefaultConfig {
 function Read-CustomConfig {
     <#
     .SYNOPSIS
-        Open a GUI dialog to edit Claude Code interactive configuration.
+        Open a GUI dialog to edit Claude Code profiles (tabbed, one-time setup).
     #>
     [CmdletBinding()]
     [OutputType([bool])]
@@ -727,77 +791,150 @@ function Read-CustomConfig {
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
 
+    Initialize-DefaultProfiles
+    $profiles = Get-ClaudeProfileList
+    $activeProfile = Get-ActiveProfile
+    if (-not $activeProfile) { $activeProfile = "GLM" }
+
     $interactiveKeys = @(
-        'ANTHROPIC_AUTH_TOKEN'
-        'ANTHROPIC_BASE_URL'
-        'ANTHROPIC_DEFAULT_HAIKU_MODEL'
-        'ANTHROPIC_DEFAULT_SONNET_MODEL'
+        'ANTHROPIC_AUTH_TOKEN',
+        'ANTHROPIC_BASE_URL',
+        'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+        'ANTHROPIC_DEFAULT_SONNET_MODEL',
         'ANTHROPIC_DEFAULT_OPUS_MODEL'
     )
 
-    $table = New-Object System.Data.DataTable
-    $null = $table.Columns.Add("Variable")
-    $null = $table.Columns.Add("Value")
-    $null = $table.Columns.Add("Description")
-
-    foreach ($key in $interactiveKeys) {
-        $item = $script:ConfigItems[$key]
-        $current = [Environment]::GetEnvironmentVariable($key, "User")
-        if (-not $current) {
-            $current = if ($item.Dynamic) { & $item.Default } else { $item.Default }
-        }
-        $row = $table.NewRow()
-        $row["Variable"] = $key
-        $row["Value"] = $current
-        $row["Description"] = $item.Description
-        $table.Rows.Add($row) | Out-Null
-    }
+    # ── Build form ──
 
     $form = New-Object System.Windows.Forms.Form
     $form.Text = "Claude Code Configuration"
-    $form.ClientSize = New-Object System.Drawing.Size(720, 300)
+    $form.ClientSize = New-Object System.Drawing.Size(760, 420)
     $form.StartPosition = "CenterScreen"
     $form.FormBorderStyle = "FixedDialog"
     $form.MaximizeBox = $false
     $form.MinimizeBox = $false
 
-    $grid = New-Object System.Windows.Forms.DataGridView
-    $grid.Dock = "Fill"
-    $grid.AllowUserToAddRows = $false
-    $grid.AllowUserToDeleteRows = $false
-    $grid.MultiSelect = $false
-    $grid.SelectionMode = "CellSelect"
-    $grid.RowHeadersVisible = $false
-    $grid.BackgroundColor = [System.Drawing.Color]::White
-    $grid.BorderStyle = "None"
-    $grid.CellBorderStyle = "SingleHorizontal"
-    $grid.GridColor = [System.Drawing.Color]::LightGray
-    $grid.AutoGenerateColumns = $false
+    # ── Top panel: active profile selector ──
 
-    $colVar = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-    $colVar.HeaderText = "Variable"
-    $colVar.ReadOnly = $true
-    $colVar.Width = 260
-    $colVar.DataPropertyName = "Variable"
-    $colVar.DefaultCellStyle.ForeColor = [System.Drawing.Color]::Gray
+    $topPanel = New-Object System.Windows.Forms.Panel
+    $topPanel.Dock = "Top"
+    $topPanel.Height = 40
 
-    $colVal = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-    $colVal.HeaderText = "Value"
-    $colVal.Width = 300
-    $colVal.DataPropertyName = "Value"
+    $lblActive = New-Object System.Windows.Forms.Label
+    $lblActive.Text = "Active profile:"
+    $lblActive.Location = New-Object System.Drawing.Point(12, 12)
+    $lblActive.AutoSize = $true
 
-    $colDesc = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
-    $colDesc.HeaderText = "Description"
-    $colDesc.ReadOnly = $true
-    $colDesc.AutoSizeMode = "Fill"
-    $colDesc.DataPropertyName = "Description"
-    $colDesc.DefaultCellStyle.ForeColor = [System.Drawing.Color]::DarkGray
+    $cmbActive = New-Object System.Windows.Forms.ComboBox
+    $cmbActive.DropDownStyle = "DropDownList"
+    $cmbActive.Location = New-Object System.Drawing.Point(110, 8)
+    $cmbActive.Size = New-Object System.Drawing.Size(200, 24)
+    foreach ($p in $profiles) { $cmbActive.Items.Add($p.Name) | Out-Null }
+    if ($cmbActive.Items.Contains($activeProfile)) {
+        $cmbActive.SelectedItem = $activeProfile
+    } elseif ($cmbActive.Items.Count -gt 0) {
+        $cmbActive.SelectedIndex = 0
+    }
 
-    $grid.Columns.Clear()
-    $grid.Columns.Add($colVar)
-    $grid.Columns.Add($colVal)
-    $grid.Columns.Add($colDesc)
-    $grid.DataSource = $table
+    $topPanel.Controls.AddRange(@($lblActive, $cmbActive))
+
+    # ── Tab control: one tab per profile ──
+
+    $tabControl = New-Object System.Windows.Forms.TabControl
+    $tabControl.Location = New-Object System.Drawing.Point(0, 40)
+    $tabControl.Size = New-Object System.Drawing.Size(760, 330)
+
+    $tabData = @{}
+
+    foreach ($prof in $profiles) {
+        $profPath = $prof.FilePath
+        try {
+            $profJson = Get-Content $profPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        } catch { continue }
+
+        $tab = New-Object System.Windows.Forms.TabPage
+        $tab.Text = $prof.Name
+        $tab.UseVisualStyleBackColor = $true
+
+        # Read current values: prefer User env var, fall back to profile default
+        $table = New-Object System.Data.DataTable
+        $null = $table.Columns.Add("Variable")
+        $null = $table.Columns.Add("Value")
+        $null = $table.Columns.Add("Description")
+
+        foreach ($key in $interactiveKeys) {
+            $item = $script:ConfigItems[$key]
+            # If this profile is active, use current env var; otherwise use profile file value
+            if ($prof.Name -eq $activeProfile) {
+                $current = [Environment]::GetEnvironmentVariable($key, "User")
+            } else {
+                $current = $null
+            }
+            if (-not $current) {
+                $prop = $profJson.env.PSObject.Properties | Where-Object { $_.Name -eq $key }
+                if ($null -ne $prop) { $current = $prop.Value }
+                if (-not $current) {
+                    $current = if ($item.Dynamic) { & $item.Default } else { $item.Default }
+                }
+            }
+            $row = $table.NewRow()
+            $row["Variable"] = $key
+            $row["Value"] = $current
+            $row["Description"] = $item.Description
+            $table.Rows.Add($row) | Out-Null
+        }
+
+        $grid = New-Object System.Windows.Forms.DataGridView
+        $grid.Dock = "Fill"
+        $grid.AllowUserToAddRows = $false
+        $grid.AllowUserToDeleteRows = $false
+        $grid.MultiSelect = $false
+        $grid.SelectionMode = "CellSelect"
+        $grid.RowHeadersVisible = $false
+        $grid.BackgroundColor = [System.Drawing.Color]::White
+        $grid.BorderStyle = "None"
+        $grid.CellBorderStyle = "SingleHorizontal"
+        $grid.GridColor = [System.Drawing.Color]::LightGray
+        $grid.AutoGenerateColumns = $false
+
+        $colVar = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+        $colVar.HeaderText = "Variable"
+        $colVar.ReadOnly = $true
+        $colVar.Width = 260
+        $colVar.DataPropertyName = "Variable"
+        $colVar.DefaultCellStyle.ForeColor = [System.Drawing.Color]::Gray
+
+        $colVal = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+        $colVal.HeaderText = "Value"
+        $colVal.Width = 300
+        $colVal.DataPropertyName = "Value"
+
+        $colDesc = New-Object System.Windows.Forms.DataGridViewTextBoxColumn
+        $colDesc.HeaderText = "Description"
+        $colDesc.ReadOnly = $true
+        $colDesc.AutoSizeMode = "Fill"
+        $colDesc.DataPropertyName = "Description"
+        $colDesc.DefaultCellStyle.ForeColor = [System.Drawing.Color]::DarkGray
+
+        $grid.Columns.Clear()
+        $grid.Columns.Add($colVar)
+        $grid.Columns.Add($colVal)
+        $grid.Columns.Add($colDesc)
+        $grid.DataSource = $table
+
+        $tab.Controls.Add($grid)
+        $tabControl.TabPages.Add($tab)
+
+        $tabData[$prof.Name] = @{
+            Grid = $grid
+            Keys = $interactiveKeys
+        }
+    }
+
+    $form.Controls.Add($tabControl)
+    $form.Controls.Add($topPanel)
+
+    # ── Bottom panel: Save / Cancel ──
 
     $panel = New-Object System.Windows.Forms.Panel
     $panel.Dock = "Bottom"
@@ -806,42 +943,101 @@ function Read-CustomConfig {
     $btnCancel = New-Object System.Windows.Forms.Button
     $btnCancel.Text = "Cancel"
     $btnCancel.Size = New-Object System.Drawing.Size(100, 32)
-    $btnCancel.Location = New-Object System.Drawing.Point(500, 8)
+    $btnCancel.Location = New-Object System.Drawing.Point(540, 8)
     $btnCancel.DialogResult = "Cancel"
 
     $btnSave = New-Object System.Windows.Forms.Button
-    $btnSave.Text = "Save"
+    $btnSave.Text = "Save All"
     $btnSave.Size = New-Object System.Drawing.Size(100, 32)
-    $btnSave.Location = New-Object System.Drawing.Point(610, 8)
+    $btnSave.Location = New-Object System.Drawing.Point(650, 8)
     $btnSave.BackColor = [System.Drawing.Color]::FromArgb(200, 230, 200)
     $btnSave.DialogResult = "OK"
 
     $panel.Controls.AddRange(@($btnCancel, $btnSave))
     $form.Controls.Add($panel)
-    $form.Controls.Add($grid)
 
     $form.AcceptButton = $btnSave
     $form.CancelButton = $btnCancel
+
+    # ── Switch active tab when dropdown changes ──
+
+    $cmbActive.add_SelectedIndexChanged({
+        $selected = $cmbActive.SelectedItem
+        if ($selected) {
+            for ($t = 0; $t -lt $tabControl.TabPages.Count; $t++) {
+                if ($tabControl.TabPages[$t].Text -eq $selected) {
+                    $tabControl.SelectedIndex = $t
+                    break
+                }
+            }
+        }
+    })
 
     $result = $form.ShowDialog()
 
     if ($result -ne "OK") { return $false }
 
-    $grid.EndEdit()
+    # ── Save all profiles ──
 
-    $tokenValue = $grid.Rows[0].Cells[1].Value
-    if (-not $tokenValue -or [string]::IsNullOrWhiteSpace($tokenValue.ToString())) {
-        [System.Windows.Forms.MessageBox]::Show(
-            "API Key cannot be empty.", "Validation Error",
-            "OK", "Error")
-        return $false
+    $selectedActive = $cmbActive.SelectedItem
+
+    foreach ($entry in $tabData.GetEnumerator()) {
+        $profileName = $entry.Key
+        $grid = $entry.Value.Grid
+        $keys = $entry.Value.Keys
+
+        $grid.EndEdit()
+
+        # Validate API key for the active profile
+        if ($profileName -eq $selectedActive) {
+            $tokenValue = $grid.Rows[0].Cells[1].Value
+            if (-not $tokenValue -or [string]::IsNullOrWhiteSpace($tokenValue.ToString())) {
+                [System.Windows.Forms.MessageBox]::Show(
+                    "API Key cannot be empty for active profile '$profileName'.", "Validation Error",
+                    "OK", "Error")
+                return $false
+            }
+        }
+
+        # Read grid values into env hashtable
+        $envData = [ordered]@{}
+        for ($i = 0; $i -lt $keys.Count; $i++) {
+            $val = $grid.Rows[$i].Cells[1].Value
+            $envData[$keys[$i]] = if ($null -ne $val) { $val.ToString() } else { "" }
+        }
+
+        # Read current profile file to preserve other env keys and settings
+        $profPath = Join-Path $script:ProfileDir "$profileName.json"
+        $profSettings = [ordered]@{}
+        if (Test-Path $profPath) {
+            try {
+                $existing = Get-Content $profPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                # Preserve other env keys (DISABLE_*, SUBAGENT, etc.)
+                foreach ($prop in $existing.env.PSObject.Properties) {
+                    if (-not $envData.Contains($prop.Name)) {
+                        $envData[$prop.Name] = $prop.Value
+                    }
+                }
+                # Preserve settings
+                foreach ($prop in $existing.settings.PSObject.Properties) {
+                    $profSettings[$prop.Name] = $prop.Value
+                }
+            } catch {}
+        }
+
+        # Write profile file
+        $profileJson = [ordered]@{
+            name        = $profileName
+            description = if ($existing) { $existing.description } else { "$profileName profile" }
+            env         = $envData
+            settings    = $profSettings
+        }
+        $noBom = New-Object System.Text.UTF8Encoding $false
+        [System.IO.File]::WriteAllText($profPath, ($profileJson | ConvertTo-Json -Depth 3).Trim(), $noBom)
     }
 
-    for ($i = 0; $i -lt $interactiveKeys.Count; $i++) {
-        $name = $interactiveKeys[$i]
-        $value = $grid.Rows[$i].Cells[1].Value.ToString()
-        Set-ConfigItem -Name $name -Value $value
-    }
+    # Apply the selected active profile to env vars + settings
+    $null = Switch-ClaudeProfile -Name $selectedActive
 
     return $true
 }
@@ -988,6 +1184,14 @@ function Invoke-ClaudeCheck {
         }
     } else {
         Write-Host "  Lock:      none" -ForegroundColor DarkGray
+    }
+
+    # Profile status
+    $activeProfile = Get-ActiveProfile
+    if ($activeProfile) {
+        Write-Host "  Profile:   $activeProfile" -ForegroundColor Green
+    } else {
+        Write-Host "  Profile:   none" -ForegroundColor DarkGray
     }
 
     Show-ConfigStatus
@@ -1537,9 +1741,9 @@ function Show-InputDialog {
 
     if ($form.ShowDialog() -ne "OK") { return }
 
-    $input = $txt.Text.Trim()
-    if ([string]::IsNullOrWhiteSpace($input)) { return }
-    return $input
+    $userInput = $txt.Text.Trim()
+    if ([string]::IsNullOrWhiteSpace($userInput)) { return }
+    return $userInput
 }
 
 function Show-PluginManagerDialog {
@@ -1729,7 +1933,7 @@ function Show-PluginManagerDialog {
 
     # ── Refresh helpers ──
 
-    function Refresh-Marketplaces {
+    function Update-MarketplaceGrid {
         $statusLabel.Text = "Loading marketplaces..."
         $form.Refresh()
 
@@ -1761,7 +1965,7 @@ function Show-PluginManagerDialog {
         $statusLabel.Text = "$($mps.Count) marketplace(s)"
     }
 
-    function Refresh-Plugins {
+    function Update-PluginGrid {
         $statusLabel.Text = "Loading plugins..."
         $form.Refresh()
 
@@ -1791,8 +1995,8 @@ function Show-PluginManagerDialog {
     # ── Event handlers ──
 
     $tabControl.add_SelectedIndexChanged({
-        if ($tabControl.SelectedIndex -eq 0) { Refresh-Marketplaces }
-        else { Refresh-Plugins }
+        if ($tabControl.SelectedIndex -eq 0) { Update-MarketplaceGrid }
+        else { Update-PluginGrid }
     })
 
     $btnMpAdd.add_Click({
@@ -1806,7 +2010,7 @@ function Show-PluginManagerDialog {
         $ErrorActionPreference = 'Continue'
         & $claudeExe plugin marketplace add $repo 2>$null | Out-Null
         $ErrorActionPreference = $prevEAP
-        Refresh-Marketplaces
+        Update-MarketplaceGrid
     })
 
     $btnMpUpdateAll.add_Click({
@@ -1822,11 +2026,11 @@ function Show-PluginManagerDialog {
             & $claudeExe plugin marketplace update $mp.name 2>$null | Out-Null
         }
         $ErrorActionPreference = $prevEAP
-        Refresh-Marketplaces
+        Update-MarketplaceGrid
     })
 
     $gridMp.add_CellDoubleClick({
-        param($sender, $e)
+        param($src, $evt)
         if ($e.RowIndex -lt 0) { return }
         $name = $gridMp.Rows[$e.RowIndex].Cells[0].Value
         if (-not $name) { return }
@@ -1838,7 +2042,7 @@ function Show-PluginManagerDialog {
         $ErrorActionPreference = 'Continue'
         & $claudeExe plugin marketplace update $name 2>$null | Out-Null
         $ErrorActionPreference = $prevEAP
-        Refresh-Marketplaces
+        Update-MarketplaceGrid
     })
 
     $btnMpRemove.add_Click({
@@ -1858,11 +2062,11 @@ function Show-PluginManagerDialog {
         $ErrorActionPreference = 'Continue'
         & $claudeExe plugin marketplace remove $name 2>$null | Out-Null
         $ErrorActionPreference = $prevEAP
-        Refresh-Marketplaces
+        Update-MarketplaceGrid
     })
 
     $gridPl.add_CellDoubleClick({
-        param($sender, $e)
+        param($src, $evt)
         if ($e.RowIndex -lt 0) { return }
         $btnPlInstall.PerformClick()
     })
@@ -1880,7 +2084,7 @@ function Show-PluginManagerDialog {
         $ErrorActionPreference = 'Continue'
         & $claudeExe plugin install $id 2>$null | Out-Null
         $ErrorActionPreference = $prevEAP
-        Refresh-Plugins
+        Update-PluginGrid
     })
 
     $btnPlUninstall.add_Click({
@@ -1901,7 +2105,7 @@ function Show-PluginManagerDialog {
         $ErrorActionPreference = 'Continue'
         & $claudeExe plugin uninstall $id 2>$null | Out-Null
         $ErrorActionPreference = $prevEAP
-        Refresh-Plugins
+        Update-PluginGrid
     })
 
     $btnPlEnable.add_Click({
@@ -1917,7 +2121,7 @@ function Show-PluginManagerDialog {
         $ErrorActionPreference = 'Continue'
         & $claudeExe plugin enable $id 2>$null | Out-Null
         $ErrorActionPreference = $prevEAP
-        Refresh-Plugins
+        Update-PluginGrid
     })
 
     $btnPlDisable.add_Click({
@@ -1933,13 +2137,13 @@ function Show-PluginManagerDialog {
         $ErrorActionPreference = 'Continue'
         & $claudeExe plugin disable $id 2>$null | Out-Null
         $ErrorActionPreference = $prevEAP
-        Refresh-Plugins
+        Update-PluginGrid
     })
 
     # ── Initial load ──
 
-    Refresh-Marketplaces
-    Refresh-Plugins
+    Update-MarketplaceGrid
+    Update-PluginGrid
     [void]$form.ShowDialog()
 }
 
@@ -2004,6 +2208,446 @@ function Invoke-ClaudeHack {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Profile System
+# ═══════════════════════════════════════════════════════════════════════════
+
+function Initialize-DefaultProfiles {
+    <#
+    .SYNOPSIS
+        Ensure built-in GLM and DeepSeek profile files exist.
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param()
+
+    if (-not (Test-Path $script:ProfileDir)) {
+        New-Item -ItemType Directory -Path $script:ProfileDir -Force | Out-Null
+    }
+
+    $noBom = New-Object System.Text.UTF8Encoding $false
+
+    $builtIn = @{
+        GLM = @{
+            name        = "GLM"
+            description = "Zhipu GLM-5.1 via bigmodel.cn (default)"
+            env         = [ordered]@{
+                ANTHROPIC_AUTH_TOKEN                    = ""
+                ANTHROPIC_BASE_URL                      = "https://open.bigmodel.cn/api/anthropic"
+                ANTHROPIC_DEFAULT_HAIKU_MODEL           = "glm-4.5-air"
+                ANTHROPIC_DEFAULT_SONNET_MODEL          = "glm-5-turbo"
+                ANTHROPIC_DEFAULT_OPUS_MODEL            = "glm-5.1"
+                CLAUDE_CODE_DISABLE_1M_CONTEXT          = "1"
+                CLAUDE_CODE_DISABLE_INTERLEAVED_THINKING = "1"
+                CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING   = "1"
+                CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY = "1"
+            }
+            settings    = [ordered]@{
+                alwaysThinkingEnabled = $false
+                effortLevel           = "medium"
+            }
+        }
+        DeepSeek = @{
+            name        = "DeepSeek"
+            description = "DeepSeek V4 with 1M context and interleaved thinking"
+            env         = [ordered]@{
+                ANTHROPIC_AUTH_TOKEN                    = ""
+                ANTHROPIC_BASE_URL                      = "https://api.deepseek.com/anthropic"
+                ANTHROPIC_DEFAULT_HAIKU_MODEL           = "deepseek-v4-flash"
+                ANTHROPIC_DEFAULT_SONNET_MODEL          = "deepseek-v4-pro[1m]"
+                ANTHROPIC_DEFAULT_OPUS_MODEL            = "deepseek-v4-pro[1m]"
+                CLAUDE_CODE_DISABLE_1M_CONTEXT          = "0"
+                CLAUDE_CODE_DISABLE_INTERLEAVED_THINKING = "0"
+                CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING   = "0"
+                CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY = "1"
+                CLAUDE_CODE_SUBAGENT_MODEL              = "deepseek-v4-flash"
+            }
+            settings    = [ordered]@{
+                alwaysThinkingEnabled = $true
+                effortLevel           = "max"
+            }
+        }
+    }
+
+    foreach ($entry in $builtIn.GetEnumerator()) {
+        $filePath = Join-Path $script:ProfileDir "$($entry.Key).json"
+        if (-not (Test-Path $filePath)) {
+            $json = $entry.Value | ConvertTo-Json -Depth 3
+            [System.IO.File]::WriteAllText($filePath, $json.Trim(), $noBom)
+        }
+    }
+}
+
+function Get-ClaudeProfileList {
+    <#
+    .SYNOPSIS
+        Enumerate all available profile files.
+    #>
+    [CmdletBinding()]
+    [OutputType([hashtable[]])]
+    param()
+
+    Initialize-DefaultProfiles
+
+    $profiles = @()
+    foreach ($file in (Get-ChildItem -Path $script:ProfileDir -Filter '*.json' -ErrorAction SilentlyContinue)) {
+        try {
+            $data = Get-Content $file.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
+            $profiles += @{
+                Name        = $data.name
+                Description = $data.description
+                FilePath    = $file.FullName
+            }
+        } catch {
+            Write-Host "[WARN] Could not parse profile: $($file.Name)" -ForegroundColor Yellow
+        }
+    }
+
+    $profiles
+}
+
+function Get-ActiveProfile {
+    <#
+    .SYNOPSIS
+        Read the active profile name from config.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param()
+
+    if (-not (Test-Path $script:ClaudeLockPath)) { return }
+    try {
+        $cfg = Get-Content $script:ClaudeLockPath -Raw -ErrorAction SilentlyContinue |
+            ConvertFrom-Json
+        if ($cfg.active_profile) { return $cfg.active_profile }
+    } catch {}
+}
+
+function Set-ActiveProfile {
+    <#
+    .SYNOPSIS
+        Write the active profile name to config, preserving existing fields.
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Name
+    )
+
+    $existing = @{}
+    if (Test-Path $script:ClaudeLockPath) {
+        try {
+            $raw = Get-Content $script:ClaudeLockPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            $raw.PSObject.Properties | ForEach-Object { $existing[$_.Name] = $_.Value }
+        } catch {}
+    }
+
+    $existing['active_profile'] = $Name
+
+    $dir = Split-Path $script:ClaudeLockPath -Parent
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+
+    $noBom = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllText($script:ClaudeLockPath, ($existing | ConvertTo-Json).Trim(), $noBom)
+}
+
+function Switch-ClaudeProfile {
+    <#
+    .SYNOPSIS
+        Apply a named profile to environment variables and settings.json.
+        Writes a refresh script to $env:TEMP\omc-refresh.ps1 for parent shell.
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Name
+    )
+
+    Initialize-DefaultProfiles
+
+    $profilePath = Join-Path $script:ProfileDir "$Name.json"
+    if (-not (Test-Path $profilePath)) {
+        Write-Host "[ERROR] Profile not found: $Name" -ForegroundColor Red
+        Write-Host "  Run 'omc switch claude' to see available profiles" -ForegroundColor DarkGray
+        return
+    }
+
+    try {
+        $profileData = Get-Content $profilePath -Raw -Encoding UTF8 | ConvertFrom-Json
+    } catch {
+        Write-Host "[ERROR] Could not parse profile: $Name" -ForegroundColor Red
+        return
+    }
+
+    Write-Host "[INFO] Switching to profile: $($profileData.name)" -ForegroundColor Cyan
+    if ($profileData.description) {
+        Write-Host "  $($profileData.description)" -ForegroundColor DarkGray
+    }
+
+    # ── Apply env vars (capture return to prevent pipeline leak) ──
+    $refreshLines = [System.Collections.Generic.List[string]]::new()
+    foreach ($key in $script:ProfileEnvKeys) {
+        $prop = $profileData.env.PSObject.Properties | Where-Object { $_.Name -eq $key }
+        if ($null -ne $prop) {
+            $value = $prop.Value
+            if ($value -is [boolean]) { $value = if ($value) { "1" } else { "0" } }
+            $null = Set-ConfigItem -Name $key -Value $value
+            $refreshLines.Add("`$env:$key = '$value'")
+        } else {
+            # Clear env vars not in this profile
+            $currentVal = [Environment]::GetEnvironmentVariable($key, "User")
+            if ($currentVal) {
+                [Environment]::SetEnvironmentVariable($key, $null, "User")
+                Set-Item -Path "env:$key" -Value $null
+                $refreshLines.Add("Remove-Item env:$key -ErrorAction SilentlyContinue")
+            }
+        }
+    }
+
+    # ── Apply settings.json overrides ──
+    if ($profileData.settings) {
+        $settingsDir = Split-Path $script:ClaudeSettingsPath -Parent
+        if (-not (Test-Path $settingsDir)) {
+            New-Item -ItemType Directory -Path $settingsDir -Force | Out-Null
+        }
+
+        $settings = [ordered]@{}
+        if (Test-Path $script:ClaudeSettingsPath) {
+            try {
+                $existing = Get-Content $script:ClaudeSettingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                $existing.PSObject.Properties | ForEach-Object { $settings[$_.Name] = $_.Value }
+            } catch {}
+        }
+
+        $changed = $false
+        foreach ($prop in $profileData.settings.PSObject.Properties) {
+            if (-not $settings.Contains($prop.Name) -or $settings[$prop.Name] -ne $prop.Value) {
+                $settings[$prop.Name] = $prop.Value
+                $changed = $true
+            }
+        }
+
+        if ($changed) {
+            $noBom = New-Object System.Text.UTF8Encoding $false
+            [System.IO.File]::WriteAllText($script:ClaudeSettingsPath, ($settings | ConvertTo-Json -Depth 5), $noBom)
+            Write-Host "  [OK] settings.json updated" -ForegroundColor Green
+        } else {
+            Write-Host "  [OK] settings.json up to date" -ForegroundColor DarkGray
+        }
+    }
+
+    # ── Mark active ──
+    Set-ActiveProfile -Name $Name
+
+    # ── Write refresh script for parent shell ──
+    $refreshScript = Join-Path $env:TEMP "omc-refresh.ps1"
+    $refreshLines.Insert(0, "# omc profile refresh - auto-generated")
+    $noBom = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllText($refreshScript, ($refreshLines -join "`n"), $noBom)
+
+    # ── Summary ──
+    $haiku = [Environment]::GetEnvironmentVariable("ANTHROPIC_DEFAULT_HAIKU_MODEL", "User")
+    $sonnet = [Environment]::GetEnvironmentVariable("ANTHROPIC_DEFAULT_SONNET_MODEL", "User")
+    $opus = [Environment]::GetEnvironmentVariable("ANTHROPIC_DEFAULT_OPUS_MODEL", "User")
+    $effort = ""
+    if (Test-Path $script:ClaudeSettingsPath) {
+        try {
+            $s = Get-Content $script:ClaudeSettingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            $effort = $s.effortLevel
+        } catch {}
+    }
+
+    Write-Host ""
+    Write-Host "  $($profileData.name) switched" -ForegroundColor Green
+    Write-Host "  Haiku:   $haiku" -ForegroundColor DarkGray
+    Write-Host "  Sonnet:  $sonnet" -ForegroundColor DarkGray
+    Write-Host "  Opus:    $opus" -ForegroundColor DarkGray
+    Write-Host "  Effort:  $effort" -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Host "  . $refreshScript" -ForegroundColor Yellow
+}
+
+function Save-ClaudeProfile {
+    <#
+    .SYNOPSIS
+        Capture current config into a named profile file.
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Name,
+
+        [string]$Description = ""
+    )
+
+    Initialize-DefaultProfiles
+
+    $envData = [ordered]@{}
+    foreach ($key in $script:ProfileEnvKeys) {
+        $value = [Environment]::GetEnvironmentVariable($key, "User")
+        $envData[$key] = if ($null -ne $value) { $value } else { "" }
+    }
+
+    $settingsData = [ordered]@{}
+    if (Test-Path $script:ClaudeSettingsPath) {
+        try {
+            $s = Get-Content $script:ClaudeSettingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            foreach ($sk in @('alwaysThinkingEnabled', 'effortLevel')) {
+                $prop = $s.PSObject.Properties | Where-Object { $_.Name -eq $sk }
+                if ($null -ne $prop) { $settingsData[$sk] = $prop.Value }
+            }
+        } catch {}
+    }
+
+    $profileJson = [ordered]@{
+        name        = $Name
+        description = $Description
+        env         = $envData
+        settings    = $settingsData
+    }
+
+    $filePath = Join-Path $script:ProfileDir "$Name.json"
+    $noBom = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllText($filePath, ($profileJson | ConvertTo-Json -Depth 3).Trim(), $noBom)
+
+    Write-Host "[OK] Profile saved: $Name" -ForegroundColor Green
+    Write-Host "  Location: $filePath" -ForegroundColor DarkGray
+}
+
+function Read-ProfileSelection {
+    <#
+    .SYNOPSIS
+        Show WinForms dialog to select a profile. Returns profile name or $null.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param()
+
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+
+    $profiles = Get-ClaudeProfileList
+    $activeProfile = Get-ActiveProfile
+
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text = "Select Claude Code Profile"
+    $form.ClientSize = New-Object System.Drawing.Size(500, 340)
+    $form.StartPosition = "CenterScreen"
+    $form.FormBorderStyle = "FixedDialog"
+    $form.MaximizeBox = $false
+    $form.MinimizeBox = $false
+
+    $lbl = New-Object System.Windows.Forms.Label
+    $lbl.Text = "Available profiles:"
+    $lbl.Location = New-Object System.Drawing.Point(12, 12)
+    $lbl.AutoSize = $true
+
+    $listBox = New-Object System.Windows.Forms.ListBox
+    $listBox.Location = New-Object System.Drawing.Point(12, 35)
+    $listBox.Size = New-Object System.Drawing.Size(460, 220)
+
+    foreach ($p in $profiles) {
+        $label = "$($p.Name) - $($p.Description)"
+        if ($p.Name -eq $activeProfile) { $label += " *" }
+        $listBox.Items.Add($label) | Out-Null
+    }
+    if ($activeProfile) {
+        for ($i = 0; $i -lt $profiles.Count; $i++) {
+            if ($profiles[$i].Name -eq $activeProfile) {
+                $listBox.SelectedIndex = $i
+                break
+            }
+        }
+    } elseif ($profiles.Count -gt 0) {
+        $listBox.SelectedIndex = 0
+    }
+
+    $panel = New-Object System.Windows.Forms.Panel
+    $panel.Dock = "Bottom"
+    $panel.Height = 50
+
+    $btnSwitch = New-Object System.Windows.Forms.Button
+    $btnSwitch.Text = "Switch"
+    $btnSwitch.Size = New-Object System.Drawing.Size(90, 32)
+    $btnSwitch.Location = New-Object System.Drawing.Point(218, 8)
+    $btnSwitch.DialogResult = "OK"
+
+    $btnNew = New-Object System.Windows.Forms.Button
+    $btnNew.Text = "New..."
+    $btnNew.Size = New-Object System.Drawing.Size(90, 32)
+    $btnNew.Location = New-Object System.Drawing.Point(318, 8)
+    $btnNew.DialogResult = "Retry"
+
+    $btnCancel = New-Object System.Windows.Forms.Button
+    $btnCancel.Text = "Cancel"
+    $btnCancel.Size = New-Object System.Drawing.Size(80, 32)
+    $btnCancel.Location = New-Object System.Drawing.Point(418, 8)
+    $btnCancel.DialogResult = "Cancel"
+
+    $panel.Controls.AddRange(@($btnSwitch, $btnNew, $btnCancel))
+    $form.Controls.Add($panel)
+    $form.Controls.Add($lbl)
+    $form.Controls.Add($listBox)
+    $form.AcceptButton = $btnSwitch
+    $form.CancelButton = $btnCancel
+
+    $result = $form.ShowDialog()
+
+    switch ($result) {
+        "OK" {
+            if ($listBox.SelectedIndex -ge 0 -and $listBox.SelectedIndex -lt $profiles.Count) {
+                return $profiles[$listBox.SelectedIndex].Name
+            }
+        }
+        "Retry" { return "__NEW__" }
+    }
+}
+
+function Invoke-ClaudeSwitch {
+    <#
+    .SYNOPSIS
+        Interactive profile switching entry point for 'omc switch claude'.
+    #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param()
+
+    Write-Host ""
+    Write-Host "--- Claude Code Profile Switch ---" -ForegroundColor Cyan
+
+    $activeProfile = Get-ActiveProfile
+    if ($activeProfile) {
+        Write-Host "  Active: $activeProfile" -ForegroundColor Green
+    } else {
+        Write-Host "  Active: none" -ForegroundColor Yellow
+    }
+
+    $selection = Read-ProfileSelection
+
+    if ($null -eq $selection) { return }
+
+    if ($selection -eq "__NEW__") {
+        Write-Host "`n[INFO] Opening configuration editor..." -ForegroundColor Cyan
+        $success = Read-CustomConfig
+        if ($success) {
+            $defaultName = if ($env:ANTHROPIC_BASE_URL -match 'deepseek') { 'DeepSeek' } else { 'GLM' }
+            $profileName = Show-InputDialog -Title "Save Profile" -Label "Profile name:" -DefaultValue $defaultName
+            if ($profileName) {
+                Save-ClaudeProfile -Name $profileName -Description "Custom $profileName profile"
+                Set-ActiveProfile -Name $profileName
+            }
+            Show-ConfigStatus
+        }
+        return
+    }
+
+    Write-Host ""
+    Switch-ClaudeProfile -Name $selection
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
 # dispatch
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -2014,5 +2658,6 @@ switch ($Command) {
     "update"    { Invoke-ClaudeUpdate }
     "uninstall" { Invoke-ClaudeUninstall }
     "setup"     { Invoke-ClaudeConfig -Scope "setup" -Force:$Force }
+    "switch"    { Invoke-ClaudeSwitch }
     "hack"      { Invoke-ClaudeHack }
 }
