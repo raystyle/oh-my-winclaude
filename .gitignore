@@ -7,6 +7,7 @@
 # Auto-generated tool config (lock, version, sha256, asset)
 # Exception: .config/starship/starship.toml is a pre-shipped template
 .config/**/config.json
+.config/claude/profiles/
 
 # Claude Code local settings
 .claude/
