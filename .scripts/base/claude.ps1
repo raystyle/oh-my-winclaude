@@ -2229,7 +2229,7 @@ function Initialize-DefaultProfiles {
     $builtIn = @{
         GLM = @{
             name        = "GLM"
-            description = "Zhipu GLM-5.1 via bigmodel.cn (default)"
+            description = "Zhipu GLM-5.1 via bigmodel.cn (200K context)"
             env         = [ordered]@{
                 ANTHROPIC_AUTH_TOKEN                    = ""
                 ANTHROPIC_BASE_URL                      = "https://open.bigmodel.cn/api/anthropic"
@@ -2240,15 +2240,15 @@ function Initialize-DefaultProfiles {
                 CLAUDE_CODE_DISABLE_INTERLEAVED_THINKING = "1"
                 CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING   = "1"
                 CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY = "1"
+                CLAUDE_CODE_SUBAGENT_MODEL              = "glm-4.5-air"
             }
             settings    = [ordered]@{
                 alwaysThinkingEnabled = $false
-                effortLevel           = "medium"
             }
         }
         DeepSeek = @{
             name        = "DeepSeek"
-            description = "DeepSeek V4 with 1M context and interleaved thinking"
+            description = "DeepSeek V4 with 1M context, thinking and effort support"
             env         = [ordered]@{
                 ANTHROPIC_AUTH_TOKEN                    = ""
                 ANTHROPIC_BASE_URL                      = "https://api.deepseek.com/anthropic"
@@ -2355,6 +2355,7 @@ function Switch-ClaudeProfile {
     <#
     .SYNOPSIS
         Apply a named profile to environment variables and settings.json.
+        Idempotent: skips unchanged values, clears old profile remnants, verifies result.
         Writes a refresh script to $env:TEMP\omc-refresh.ps1 for parent shell.
     #>
     [CmdletBinding()]
@@ -2380,60 +2381,110 @@ function Switch-ClaudeProfile {
         return
     }
 
+    Write-Host ""
     Write-Host "[INFO] Switching to profile: $($profileData.name)" -ForegroundColor Cyan
     if ($profileData.description) {
         Write-Host "  $($profileData.description)" -ForegroundColor DarkGray
     }
 
-    # ── Apply env vars (capture return to prevent pipeline leak) ──
+    # ── Phase A: Env vars — exact alignment ──
+    Write-Host "`n  Environment:" -ForegroundColor Cyan
+
     $refreshLines = [System.Collections.Generic.List[string]]::new()
+
     foreach ($key in $script:ProfileEnvKeys) {
         $prop = $profileData.env.PSObject.Properties | Where-Object { $_.Name -eq $key }
+        $currentVal = [Environment]::GetEnvironmentVariable($key, "User")
+
         if ($null -ne $prop) {
             $value = $prop.Value
             if ($value -is [boolean]) { $value = if ($value) { "1" } else { "0" } }
-            $null = Set-ConfigItem -Name $key -Value $value
-            $refreshLines.Add("`$env:$key = '$value'")
+
+            if ($currentVal -eq $value) {
+                Write-Host "  [OK] $key = $value" -ForegroundColor DarkGray
+            } else {
+                [Environment]::SetEnvironmentVariable($key, $value, "User")
+                Set-Item -Path "env:$key" -Value $value
+                $refreshLines.Add("`$env:$key = '$value'")
+                $prev = if ($currentVal) { $currentVal } else { "(none)" }
+                Write-Host "  [SET] $key = $value" -ForegroundColor Green
+                Write-Host "        was: $prev" -ForegroundColor DarkGray
+            }
         } else {
-            # Clear env vars not in this profile
-            $currentVal = [Environment]::GetEnvironmentVariable($key, "User")
+            # Key not in this profile — clear if currently set
             if ($currentVal) {
                 [Environment]::SetEnvironmentVariable($key, $null, "User")
                 Set-Item -Path "env:$key" -Value $null
                 $refreshLines.Add("Remove-Item env:$key -ErrorAction SilentlyContinue")
+                Write-Host "  [DEL] $key (was: $currentVal)" -ForegroundColor Yellow
+            } else {
+                Write-Host "  [OK] $key = (not set)" -ForegroundColor DarkGray
             }
         }
     }
 
-    # ── Apply settings.json overrides ──
-    if ($profileData.settings) {
-        $settingsDir = Split-Path $script:ClaudeSettingsPath -Parent
-        if (-not (Test-Path $settingsDir)) {
-            New-Item -ItemType Directory -Path $settingsDir -Force | Out-Null
-        }
+    # ── Phase B: Settings.json — profile-managed keys alignment ──
+    Write-Host "`n  Settings:" -ForegroundColor Cyan
 
-        $settings = [ordered]@{}
-        if (Test-Path $script:ClaudeSettingsPath) {
-            try {
-                $existing = Get-Content $script:ClaudeSettingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
-                $existing.PSObject.Properties | ForEach-Object { $settings[$_.Name] = $_.Value }
-            } catch {}
-        }
+    $profileManagedKeys = @('alwaysThinkingEnabled', 'effortLevel')
 
-        $changed = $false
-        foreach ($prop in $profileData.settings.PSObject.Properties) {
-            if (-not $settings.Contains($prop.Name) -or $settings[$prop.Name] -ne $prop.Value) {
-                $settings[$prop.Name] = $prop.Value
-                $changed = $true
-            }
-        }
+    $settingsDir = Split-Path $script:ClaudeSettingsPath -Parent
+    if (-not (Test-Path $settingsDir)) {
+        New-Item -ItemType Directory -Path $settingsDir -Force | Out-Null
+    }
 
-        if ($changed) {
-            $noBom = New-Object System.Text.UTF8Encoding $false
-            [System.IO.File]::WriteAllText($script:ClaudeSettingsPath, ($settings | ConvertTo-Json -Depth 5), $noBom)
-            Write-Host "  [OK] settings.json updated" -ForegroundColor Green
+    $settings = [ordered]@{}
+    if (Test-Path $script:ClaudeSettingsPath) {
+        try {
+            $existing = Get-Content $script:ClaudeSettingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            $existing.PSObject.Properties | ForEach-Object { $settings[$_.Name] = $_.Value }
+        } catch {}
+    }
+
+    $settingsChanged = $false
+    $settingsNotes = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($skey in $profileManagedKeys) {
+        # Determine target value: profile value or default
+        $profileProp = if ($profileData.settings) {
+            $profileData.settings.PSObject.Properties | Where-Object { $_.Name -eq $skey }
+        } else { $null }
+
+        $targetValue = if ($null -ne $profileProp) {
+            $profileProp.Value
+        } elseif ($script:ClaudeSettingsDefaults.Contains($skey)) {
+            $script:ClaudeSettingsDefaults[$skey]
         } else {
-            Write-Host "  [OK] settings.json up to date" -ForegroundColor DarkGray
+            $null
+        }
+
+        if ($null -eq $targetValue) { continue }
+
+        $currentSVal = if ($settings.Contains($skey)) { $settings[$skey] } else { $null }
+        $source = if ($null -ne $profileProp) { "" } else { " (default)" }
+
+        if ($null -eq $currentSVal -or $currentSVal -ne $targetValue) {
+            $settings[$skey] = $targetValue
+            $settingsChanged = $true
+            $prev = if ($null -ne $currentSVal) { $currentSVal } else { "(none)" }
+            $settingsNotes.Add("[SET] $skey = $targetValue$source (was: $prev)")
+        } else {
+            $settingsNotes.Add("[OK] $skey = $targetValue$source")
+        }
+    }
+
+    if ($settingsChanged) {
+        $noBom = New-Object System.Text.UTF8Encoding $false
+        [System.IO.File]::WriteAllText($script:ClaudeSettingsPath, ($settings | ConvertTo-Json -Depth 5), $noBom)
+    }
+
+    foreach ($note in $settingsNotes) {
+        if ($note.StartsWith("[SET]")) {
+            $display = $note.Substring(6)
+            Write-Host "  [SET] $display" -ForegroundColor Green
+        } else {
+            $display = $note.Substring(5)
+            Write-Host "  [OK]$display" -ForegroundColor DarkGray
         }
     }
 
@@ -2446,26 +2497,64 @@ function Switch-ClaudeProfile {
     $noBom = New-Object System.Text.UTF8Encoding $false
     [System.IO.File]::WriteAllText($refreshScript, ($refreshLines -join "`n"), $noBom)
 
-    # ── Summary ──
-    $haiku = [Environment]::GetEnvironmentVariable("ANTHROPIC_DEFAULT_HAIKU_MODEL", "User")
-    $sonnet = [Environment]::GetEnvironmentVariable("ANTHROPIC_DEFAULT_SONNET_MODEL", "User")
-    $opus = [Environment]::GetEnvironmentVariable("ANTHROPIC_DEFAULT_OPUS_MODEL", "User")
-    $effort = ""
+    # ── Phase C: Verification ──
+    Write-Host "`n  Verification:" -ForegroundColor Cyan
+    $mismatch = $false
+
+    foreach ($key in $script:ProfileEnvKeys) {
+        $prop = $profileData.env.PSObject.Properties | Where-Object { $_.Name -eq $key }
+        $actualVal = [Environment]::GetEnvironmentVariable($key, "User")
+
+        if ($null -ne $prop) {
+            $expected = $prop.Value
+            if ($expected -is [boolean]) { $expected = if ($expected) { "1" } else { "0" } }
+            if ($actualVal -ne $expected) {
+                Write-Host "  [MISMATCH] $key = $actualVal (expected: $expected)" -ForegroundColor Red
+                $mismatch = $true
+            }
+        }
+    }
+
     if (Test-Path $script:ClaudeSettingsPath) {
         try {
             $s = Get-Content $script:ClaudeSettingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
-            $effort = $s.effortLevel
+            foreach ($skey in $profileManagedKeys) {
+                $profileProp = if ($profileData.settings) {
+                    $profileData.settings.PSObject.Properties | Where-Object { $_.Name -eq $skey }
+                } else { $null }
+
+                $targetValue = if ($null -ne $profileProp) {
+                    $profileProp.Value
+                } elseif ($script:ClaudeSettingsDefaults.Contains($skey)) {
+                    $script:ClaudeSettingsDefaults[$skey]
+                } else {
+                    $null
+                }
+
+                if ($null -eq $targetValue) { continue }
+
+                $actualSVal = $s.PSObject.Properties | Where-Object { $_.Name -eq $skey }
+                if ($null -eq $actualSVal -or $actualSVal.Value -ne $targetValue) {
+                    $display = if ($null -ne $actualSVal) { $actualSVal.Value } else { "(none)" }
+                    Write-Host "  [MISMATCH] $skey = $display (expected: $targetValue)" -ForegroundColor Red
+                    $mismatch = $true
+                }
+            }
         } catch {}
     }
 
+    # ── Summary ──
     Write-Host ""
-    Write-Host "  $($profileData.name) switched" -ForegroundColor Green
-    Write-Host "  Haiku:   $haiku" -ForegroundColor DarkGray
-    Write-Host "  Sonnet:  $sonnet" -ForegroundColor DarkGray
-    Write-Host "  Opus:    $opus" -ForegroundColor DarkGray
-    Write-Host "  Effort:  $effort" -ForegroundColor DarkGray
+    if ($mismatch) {
+        Write-Host "  $($profileData.name) switched with warnings" -ForegroundColor Yellow
+    } else {
+        Write-Host "  $($profileData.name) switched" -ForegroundColor Green
+    }
+
+    if ($refreshLines.Count -gt 1) {
+        Write-Host "  . $refreshScript" -ForegroundColor Yellow
+    }
     Write-Host ""
-    Write-Host "  . $refreshScript" -ForegroundColor Yellow
 }
 
 function Save-ClaudeProfile {

@@ -14,3 +14,6 @@
 
 # PSES session file
 PowerShellEditorServices.json
+
+# Nushell evo log
+nu_evo.jsonl
