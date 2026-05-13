@@ -899,16 +899,24 @@ function Invoke-ToolInstall {
                 }
 
                 $kept = 0
+                $failed = 0
                 Get-ChildItem -Path $sourceDir -Recurse -File | ForEach-Object {
                     if ($_.Name -in $keepPatterns) {
-                        Copy-Item -Path $_.FullName -Destination $binDir -Force
-                        $kept++
+                        try {
+                            Copy-Item -Path $_.FullName -Destination $binDir -Force -ErrorAction Stop
+                            $kept++
+                        } catch {
+                            $failed++
+                            Write-Host "[FAIL] $($_.Name): $_" -ForegroundColor Yellow
+                        }
                     }
                 }
-                if ($kept -eq 0) {
+                if ($kept -eq 0 -and $failed -eq 0) {
                     Write-Host "[WARN] No matching files from archive, copying all" -ForegroundColor Yellow
                     Copy-Item -Path "$sourceDir\*" -Destination $binDir -Recurse -Force
-                } else {
+                } elseif ($failed -gt 0) {
+                    Write-Host "[INFO] Extracted $kept file(s), $failed failed (file in use — close the process and re-run)" -ForegroundColor DarkGray
+                } elseif ($kept -gt 0) {
                     Write-Host "[INFO] Extracted $kept file(s)" -ForegroundColor DarkGray
                 }
             } finally {
