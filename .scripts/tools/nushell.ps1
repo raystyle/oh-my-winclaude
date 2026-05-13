@@ -36,37 +36,67 @@ return @{
         $browseTag = "v$browseVersion"
         $browsePattern = 'nu_plugin_browse-.*-x86_64-pc-windows-msvc\.zip$'
         $browseExe = Join-Path $binDir 'nu_plugin_browse.exe'
+        $cacheDir = Get-ToolCacheDir -ToolDef $ToolDef -RootDir $RootDir
 
         if (-not (Test-Path $browseExe)) {
-            Write-Host "[INFO] Downloading nu_plugin_browse from $browsePluginRepo ..." -ForegroundColor Cyan
-            try {
-                $release = Get-GitHubRelease -Repo $browsePluginRepo -Tag $browseTag
-                $asset = $release.assets | Where-Object { $_.name -match $browsePattern } | Select-Object -First 1
-                if ($asset) {
-                    $tempZip = Join-Path $env:TEMP "nu_plugin_browse-$Version.zip"
-                    try {
-                        Save-GitHubReleaseAsset -Repo $browsePluginRepo -Tag $browseTag -AssetPattern $asset.name -OutFile $tempZip
-                    } catch {
-                        Write-Host "[WARN] gh download failed, trying direct URL..." -ForegroundColor Yellow
-                        Invoke-DownloadWithProgress -Url $asset.browser_download_url -OutFile $tempZip
-                    }
-                    $extractTemp = Join-Path $env:TEMP "nu_plugin_browse-extract"
-                    if (Test-Path $extractTemp) { Remove-Item $extractTemp -Recurse -Force }
-                    Expand-Archive -Path $tempZip -DestinationPath $extractTemp -Force
-                    $extracted = Get-ChildItem -Path $extractTemp -Filter 'nu_plugin_browse.exe' -Recurse -File | Select-Object -First 1
-                    if ($extracted) {
-                        Copy-Item -Path $extracted.FullName -Destination $browseExe -Force
-                        Write-Host "[OK] Installed: nu_plugin_browse.exe" -ForegroundColor Green
-                    } else {
-                        Write-Host "[WARN] nu_plugin_browse.exe not found in archive" -ForegroundColor Yellow
-                    }
-                    Remove-Item $extractTemp -Recurse -Force -ErrorAction SilentlyContinue
-                    Remove-Item $tempZip -Force -ErrorAction SilentlyContinue
-                } else {
-                    Write-Host "[WARN] nu_plugin_browse asset not found for tag $browseTag" -ForegroundColor Yellow
+            $cacheZipName = "nu_plugin_browse-$browseVersion.zip"
+            $cacheZip = Join-Path $cacheDir $cacheZipName
+
+            # Check cache first
+            $browseConfig = Get-ToolConfig -ToolDef $ToolDef
+            $cachedEntry = $null
+            if ($browseConfig.assets) {
+                $cachedEntry = $browseConfig.assets | Where-Object { $_.name -eq $cacheZipName } | Select-Object -First 1
+            }
+            $useCache = $false
+            if ($cachedEntry -and (Test-Path $cacheZip)) {
+                $actualHash = (Get-FileHash -Path $cacheZip -Algorithm SHA256).Hash
+                if ($actualHash -eq $cachedEntry.sha256) {
+                    Write-Host "[OK] Using cached: $cacheZipName" -ForegroundColor Green
+                    $useCache = $true
                 }
-            } catch {
-                Write-Host "[WARN] Failed to download nu_plugin_browse: $_" -ForegroundColor Yellow
+            }
+
+            if (-not $useCache) {
+                Write-Host "[INFO] Downloading nu_plugin_browse from $browsePluginRepo ..." -ForegroundColor Cyan
+                try {
+                    $release = Get-GitHubRelease -Repo $browsePluginRepo -Tag $browseTag
+                    $asset = $release.assets | Where-Object { $_.name -match $browsePattern } | Select-Object -First 1
+                    if ($asset) {
+                        if (-not (Test-Path $cacheDir)) {
+                            New-Item -ItemType Directory -Path $cacheDir -Force | Out-Null
+                        }
+                        try {
+                            Save-GitHubReleaseAsset -Repo $browsePluginRepo -Tag $browseTag -AssetPattern $asset.name -OutFile $cacheZip
+                        } catch {
+                            Write-Host "[WARN] gh download failed, trying direct URL..." -ForegroundColor Yellow
+                            Invoke-DownloadWithProgress -Url $asset.browser_download_url -OutFile $cacheZip
+                        }
+                        $null = Test-FileHash -FilePath $cacheZip -Release $release -AssetName $asset.name -Repo $browsePluginRepo -Tag $browseTag
+                        $assetHash = (Get-FileHash -Path $cacheZip -Algorithm SHA256).Hash
+                        Set-ToolConfig -ToolDef $ToolDef -AssetName $cacheZipName -AssetSha256 $assetHash
+                        Write-Host "[OK] Asset cached: $cacheZipName" -ForegroundColor Green
+                    } else {
+                        Write-Host "[WARN] nu_plugin_browse asset not found for tag $browseTag" -ForegroundColor Yellow
+                    }
+                } catch {
+                    Write-Host "[WARN] Failed to download nu_plugin_browse: $_" -ForegroundColor Yellow
+                }
+            }
+
+            # Extract from cache
+            if (Test-Path $cacheZip) {
+                $extractTemp = Join-Path $env:TEMP "nu_plugin_browse-extract"
+                if (Test-Path $extractTemp) { Remove-Item $extractTemp -Recurse -Force }
+                Expand-Archive -Path $cacheZip -DestinationPath $extractTemp -Force
+                $extracted = Get-ChildItem -Path $extractTemp -Filter 'nu_plugin_browse.exe' -Recurse -File | Select-Object -First 1
+                if ($extracted) {
+                    Copy-Item -Path $extracted.FullName -Destination $browseExe -Force
+                    Write-Host "[OK] Installed: nu_plugin_browse.exe" -ForegroundColor Green
+                } else {
+                    Write-Host "[WARN] nu_plugin_browse.exe not found in archive" -ForegroundColor Yellow
+                }
+                Remove-Item $extractTemp -Recurse -Force -ErrorAction SilentlyContinue
             }
         }
 
