@@ -2000,7 +2000,7 @@ function Show-PluginManagerDialog {
     })
 
     $btnMpAdd.add_Click({
-        $repo = Show-InputDialog -Title "Add Marketplace" -Label "GitHub repo (e.g. owner/repo):" -DefaultValue "raystyle/Marketplaces"
+        $repo = Show-InputDialog -Title "Add Marketplace" -Label "GitHub repo (e.g. owner/repo):" -DefaultValue "raystyle/plugins"
         if (-not $repo) { return }
 
         $statusLabel.Text = "Adding marketplace $repo ..."
@@ -2167,7 +2167,7 @@ function Invoke-ClaudeHack {
     if ($env:Path -notlike "*$baseBin*") { $env:Path = "$baseBin;$env:Path" }
     if ($env:Path -notlike "*$gitCmd*") { $env:Path = "$gitCmd;$env:Path" }
 
-    $BuiltInMarketplaces = @('raystyle/Marketplaces', 'jarrodwatts/claude-hud')
+    $BuiltInMarketplaces = @('raystyle/plugins')
 
     Write-Host "[INFO] Checking marketplaces..." -ForegroundColor Cyan
 
@@ -2183,11 +2183,19 @@ function Invoke-ClaudeHack {
         Write-Host "[INFO] Adding built-in marketplace $repo ..." -ForegroundColor Cyan
         $prevEAP = $ErrorActionPreference
         $ErrorActionPreference = 'Continue'
-        & $claudeExe plugin marketplace add $repo 2>$null | Out-Null
+        $addOutput = & $claudeExe plugin marketplace add $repo 2>&1 | Out-String
         $ErrorActionPreference = $prevEAP
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "[WARN] Failed to add marketplace ${repo}: $addOutput" -ForegroundColor Yellow
+        }
     }
 
     Write-Host "[INFO] Updating marketplaces..." -ForegroundColor Cyan
+
+    # claude.exe fails to find git when cwd is a git repository (Bun sandbox issue).
+    # Temporarily push to a non-git directory during marketplace operations.
+    Push-Location $env:USERPROFILE
+
     $prevEAP = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     $output = & $claudeExe plugin marketplace list --json 2>$null | Out-String
@@ -2198,9 +2206,14 @@ function Invoke-ClaudeHack {
     foreach ($mpName in $mpNames) {
         $prevEAP = $ErrorActionPreference
         $ErrorActionPreference = 'Continue'
-        & $claudeExe plugin marketplace update $mpName 2>$null | Out-Null
+        $updateOutput = & $claudeExe plugin marketplace update $mpName 2>&1 | Out-String
         $ErrorActionPreference = $prevEAP
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "[WARN] Failed to update marketplace ${mpName}: $updateOutput" -ForegroundColor Yellow
+        }
     }
+
+    Pop-Location
 
     Write-Host "[OK] Opening Plugin Manager..." -ForegroundColor Green
 

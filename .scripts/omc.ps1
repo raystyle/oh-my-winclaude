@@ -95,6 +95,8 @@ $ToolDefs = @(
     'rumdl'
     'nushell'
     'conclaude'
+    'bat'
+    'ast-grep'
     'bun'
 )
 

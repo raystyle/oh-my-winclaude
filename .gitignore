@@ -17,3 +17,6 @@ PowerShellEditorServices.json
 
 # Nushell evo log
 nu_evo.jsonl
+
+# Claude source code knowledge base
+.knowledge/claude_source_code/

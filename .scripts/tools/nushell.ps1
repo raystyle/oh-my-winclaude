@@ -31,7 +31,7 @@ return @{
         if (-not (Test-Path $nuExe)) { return }
 
         # Download nu_plugin_browse from separate repo
-        $browsePluginRepo = 'raystyle/nu_plugin_bin'
+        $browsePluginRepo = 'raystyle/nu_browse_bin'
         $browseVersion = $Version -replace '-evo$', ''
         $browseTag = "v$browseVersion"
         $browsePattern = 'nu_plugin_browse-.*-x86_64-pc-windows-msvc\.zip$'

@@ -1,13 +1,13 @@
-# Oh My Claude
+# Oh My WinClaude
 
-为 Claude Code 构建和管理开发与智能体操作环境的工具集。通过 `omc` CLI 统一安装、更新和版本锁定 CLI 工具与开发运行时，内置中国网络友好的下载回退机制。
+RAY 的私有 Claude Code 基础环境。通过 `omc` CLI 统一安装、更新和版本锁定 CLI 工具与开发运行时，内置中国网络友好的下载回退机制。
 
 ## 快速开始
 
 ```powershell
 # 1. 克隆仓库
-git clone <repo-url> D:\ohmyclaude
-cd D:\ohmyclaude
+git clone https://github.com/raystyle/oh-my-winclaude D:\Oh-My-Claude
+cd D:\Oh-My-Claude
 
 # 2. 首次引导（设置 PATH、prefix、GitHub hosts 加速）
 .\.scripts\init.ps1
@@ -114,7 +114,7 @@ omc 依赖的引导级工具，独立脚本，通过 dot-source 调度。
 ## 目录结构
 
 ```
-ohmyclaude/
+oh-my-winclaude/
 ├── omc.exe                  # 入口（编译的 Rust 二进制）
 ├── omc.shim                 # Shim 配置 -> powershell.exe -File .scripts/omc.ps1
 ├── CLAUDE.md                # 项目文档（Claude Code 指引）
