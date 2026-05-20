@@ -9,8 +9,9 @@
 .config/**/config.json
 .config/claude/profiles/
 
-# Claude Code local settings
-.claude/
+# Claude Code local settings (except rules)
+.claude/*
+!.claude/rules/
 
 # PSES session file
 PowerShellEditorServices.json

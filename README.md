@@ -81,6 +81,8 @@ omc 依赖的引导级工具，独立脚本，通过 dot-source 调度。
 | rumdl | Markdown lint/format 工具 |
 | nushell | Nushell fork（nushell-evo），含 MCP 日志和 browse 插件 |
 | conclaude | Claude Code 会话 guardrail 工具，通过 hook 系统 enforce linting、测试、格式化及文件保护规则 |
+| bat | cat 替代品，语法高亮和 Git 集成 |
+| ast-grep | AST 结构化代码搜索、lint 和重写（`sg` 别名） |
 | bun | JavaScript 运行时、打包器、测试运行器和包管理器（npmmirror 镜像源） |
 | duckdb | DuckDB CLI（独立脚本） |
 
@@ -137,6 +139,8 @@ oh-my-winclaude/
 │   └── starship/
 │       └── starship.toml    # 预置的 starship 提示符配置
 ├── .knowledge/              # PowerShell 编码风格参考和工具开发指南
+├── .claude/
+│   └── rules/               # Claude Code 条件加载规则（按文件路径触发）
 └── (运行时自动生成)
     ├── .envs/               # 已安装的二进制和运行时
     ├── .cache/              # 下载缓存
