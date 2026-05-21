@@ -2000,7 +2000,7 @@ function Show-PluginManagerDialog {
     })
 
     $btnMpAdd.add_Click({
-        $repo = Show-InputDialog -Title "Add Marketplace" -Label "GitHub repo (e.g. owner/repo):" -DefaultValue "raystyle/plugins"
+        $repo = Show-InputDialog -Title "Add Marketplace" -Label "GitHub repo (e.g. owner/repo):" -DefaultValue "raystyle/claude-plugins"
         if (-not $repo) { return }
 
         $statusLabel.Text = "Adding marketplace $repo ..."
@@ -2167,7 +2167,7 @@ function Invoke-ClaudeHack {
     if ($env:Path -notlike "*$baseBin*") { $env:Path = "$baseBin;$env:Path" }
     if ($env:Path -notlike "*$gitCmd*") { $env:Path = "$gitCmd;$env:Path" }
 
-    $BuiltInMarketplaces = @('raystyle/plugins')
+    $BuiltInMarketplaces = @('raystyle/claude-plugins')
 
     Write-Host "[INFO] Checking marketplaces..." -ForegroundColor Cyan
 

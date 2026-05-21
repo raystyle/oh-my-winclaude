@@ -45,7 +45,7 @@ Claude Code 支持 4 种 hook 类型：`command`（Shell 命令）、`prompt`（
 
 ### 插件系统
 
-插件通过 marketplace 安装，marketplace 是 GitHub 仓库（如 `raystyle/plugins`）。插件包含 skills、hooks、agents、commands 等组件。启用状态存储在 settings.json 的 `enabledPlugins` 字段（格式：`"plugin-name@marketplace": true`）。
+插件通过 marketplace 安装，marketplace 是 GitHub 仓库（如 `raystyle/claude-plugins`）。插件包含 skills、hooks、agents、commands 等组件。启用状态存储在 settings.json 的 `enabledPlugins` 字段（格式：`"plugin-name@marketplace": true`）。
 
 ### Skills 系统
 
