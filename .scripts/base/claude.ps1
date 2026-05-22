@@ -2199,7 +2199,9 @@ function Invoke-ClaudeHack {
     if ($env:Path -notlike "*$baseBin*") { $env:Path = "$baseBin;$env:Path" }
     if ($env:Path -notlike "*$gitCmd*") { $env:Path = "$gitCmd;$env:Path" }
 
-    $BuiltInMarketplaces = @('raystyle/claude-plugins')
+    $BuiltInMarketplaces = @(
+        @{ Repo = 'raystyle/claude-plugins'; Url = 'https://github.com/raystyle/claude-plugins' }
+    )
 
     Write-Host "[INFO] Checking marketplaces..." -ForegroundColor Cyan
 
@@ -2208,17 +2210,18 @@ function Invoke-ClaudeHack {
     $output = & $claudeExe plugin marketplace list --json 2>$null | Out-String
     $ErrorActionPreference = $prevEAP
 
-    foreach ($repo in $BuiltInMarketplaces) {
-        $escaped = [regex]::Escape($repo)
-        if ($output -match "`"repo`"\s*:\s*`"$escaped`"") { continue }
+    foreach ($mp in $BuiltInMarketplaces) {
+        $escapedRepo = [regex]::Escape($mp.Repo)
+        $escapedUrl = [regex]::Escape($mp.Url)
+        if ($output -match "`"repo`"\s*:\s*`"$escapedRepo`"" -or $output -match "`"url`"\s*:\s*`"$escapedUrl`"") { continue }
 
-        Write-Host "[INFO] Adding built-in marketplace $repo ..." -ForegroundColor Cyan
+        Write-Host "[INFO] Adding built-in marketplace $($mp.Repo) ..." -ForegroundColor Cyan
         $prevEAP = $ErrorActionPreference
         $ErrorActionPreference = 'Continue'
-        $addOutput = & $claudeExe plugin marketplace add $repo 2>&1 | Out-String
+        $addOutput = & $claudeExe plugin marketplace add $mp.Url 2>&1 | Out-String
         $ErrorActionPreference = $prevEAP
         if ($LASTEXITCODE -ne 0) {
-            Write-Host "[WARN] Failed to add marketplace ${repo}: $addOutput" -ForegroundColor Yellow
+            Write-Host "[WARN] Failed to add marketplace $($mp.Repo): $addOutput" -ForegroundColor Yellow
         }
     }
 
