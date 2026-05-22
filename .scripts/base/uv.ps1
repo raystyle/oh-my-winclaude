@@ -43,12 +43,13 @@ $uvMirrorUrl = "https://mirrors.aliyun.com/pypi/simple"
 $UvRepo      = "astral-sh/uv"
 
 $UvEnvVars = [ordered]@{
-    'UV_CACHE_DIR'          = $UvCacheDir
-    'UV_PYTHON_INSTALL_DIR' = $UvPyDir
-    'UV_PYTHON_BIN_DIR'     = $script:BaseBin
-    'UV_TOOL_DIR'           = $UvToolDir
-    'UV_TOOL_BIN_DIR'       = $script:BaseBin
-    'UV_INSTALL_DIR'        = $script:BaseBin
+    'UV_CACHE_DIR'                = $UvCacheDir
+    'UV_PYTHON_INSTALL_DIR'       = $UvPyDir
+    'UV_PYTHON_BIN_DIR'           = $script:BaseBin
+    'UV_PYTHON_INSTALL_MIRROR'    = 'https://mirror.nju.edu.cn/github-release/astral-sh/python-build-standalone/'
+    'UV_TOOL_DIR'                 = $UvToolDir
+    'UV_TOOL_BIN_DIR'             = $script:BaseBin
+    'UV_INSTALL_DIR'              = $script:BaseBin
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -515,6 +516,9 @@ function Invoke-UvInstall {
     }
 
     # Extract uv.exe to .envs/base/bin/
+    if (-not (Test-Path $script:BaseBin)) {
+        New-Item -ItemType Directory -Path $script:BaseBin -Force | Out-Null
+    }
     $tmpDir = Join-Path $env:TEMP "omc-uv-$(Get-Random)"
     try {
         Expand-Archive -Path $zipFile -DestinationPath $tmpDir -Force

@@ -163,7 +163,7 @@ function Remove-ClaudeLock {
 function Invoke-ClaudeExtract {
     <#
     .SYNOPSIS
-        Extract claude.exe from claude-agent-sdk via uv run --with.
+        Extract claude.exe from claude-agent-sdk wheel via uv pip download + Expand-Archive.
     .PARAMETER Destination
         Target file path for the extracted claude.exe.
     .PARAMETER SdkVersion
@@ -188,45 +188,77 @@ function Invoke-ClaudeExtract {
         New-Item -ItemType Directory -Path $destDir -Force | Out-Null
     }
 
-    $pyScript = @"
-import claude_agent_sdk, shutil, os, sys
-src = os.path.join(os.path.dirname(claude_agent_sdk.__file__), '_bundled', 'claude.exe')
-if not os.path.isfile(src):
-    print(f'[ERROR] claude.exe not found in sdk: {src}')
-    sys.exit(1)
-dst = os.environ.get('CLAUDE_TARGET_EXE', 'claude.exe')
-os.makedirs(os.path.dirname(dst) or '.', exist_ok=True)
-shutil.copy2(src, dst)
-size_mb = os.path.getsize(dst) // (1024*1024)
-print(f'Extracted: {dst} ({size_mb} MB)')
-"@
-
-    $withSpec = if ($SdkVersion) { "$SdkPackage==$SdkVersion" } else { $SdkPackage }
+    $spec = if ($SdkVersion) { "$SdkPackage==$SdkVersion" } else { $SdkPackage }
     $sdkLabel = if ($SdkVersion) { "$SdkPackage $SdkVersion" } else { "$SdkPackage (latest)" }
-    Write-Host "[INFO] Extracting claude.exe via $sdkLabel ..." -ForegroundColor Cyan
+    Write-Host "[INFO] Downloading $sdkLabel wheel ..." -ForegroundColor Cyan
 
-    $env:CLAUDE_TARGET_EXE = $Destination
-    $prevEAP = $ErrorActionPreference
-    $ErrorActionPreference = 'Continue'
-    & $UvExe run --with $withSpec python -c $pyScript 2>$null
-    $exitCode = $LASTEXITCODE
-    $ErrorActionPreference = $prevEAP
+    # Download whl to a temp directory via uv pip download
+    $whlDir = Join-Path $CacheDir "whl-$([guid]::NewGuid().ToString('N').Substring(0,8))"
+    try {
+        New-Item -ItemType Directory -Path $whlDir -Force | Out-Null
 
-    if ($exitCode -ne 0) {
-        Write-Host "[ERROR] claude.exe is in use - close Claude Code and try again" -ForegroundColor Red
-        exit 1
+        $prevEAP = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        $dlOutput = & $UvExe run --no-project --python 3.12 python -m pip download --no-deps --only-binary :all: -d $whlDir $spec 2>&1 | Out-String
+        $exitCode = $LASTEXITCODE
+        $ErrorActionPreference = $prevEAP
+
+        if ($exitCode -ne 0) {
+            Write-Host "[ERROR] uv pip download failed for $sdkLabel" -ForegroundColor Red
+            Write-Host "  $dlOutput" -ForegroundColor DarkGray
+            exit 1
+        }
+
+        # Find the downloaded whl file
+        $whlFile = Get-ChildItem -Path $whlDir -Filter "*.whl" | Select-Object -First 1
+        if (-not $whlFile) {
+            Write-Host "[ERROR] No wheel file found after download" -ForegroundColor Red
+            exit 1
+        }
+
+        $whlSize = $whlFile.Length
+        $whlSizeStr = if ($whlSize -ge 1MB) { "{0:N1} MB" -f ($whlSize / 1MB) } else { "{0:N0} KB" -f ($whlSize / 1KB) }
+        Write-Host "[INFO] Downloaded: $($whlFile.Name) ($whlSizeStr)" -ForegroundColor Cyan
+
+        # Extract claude.exe from whl (whl is a ZIP archive, but Expand-Archive requires .zip extension)
+        Write-Host "[INFO] Extracting claude.exe ..." -ForegroundColor Cyan
+        $extractDir = Join-Path $whlDir "extracted"
+        $zipPath = $whlFile.FullName -replace '\.whl$', '.zip'
+        $zipFile = [System.IO.FileInfo]::new($zipPath)
+        Copy-Item -Path $whlFile.FullName -Destination $zipFile.FullName -Force
+        Expand-Archive -Path $zipFile.FullName -DestinationPath $extractDir -Force
+
+        # Locate claude.exe in the extracted content
+        $claudeExe = Get-ChildItem -Path $extractDir -Recurse -Filter "claude.exe" |
+            Where-Object { $_.DirectoryName -match '_bundled' } |
+            Select-Object -First 1
+
+        if (-not $claudeExe) {
+            # Fallback: any claude.exe in the archive
+            $claudeExe = Get-ChildItem -Path $extractDir -Recurse -Filter "claude.exe" |
+                Select-Object -First 1
+        }
+
+        if (-not $claudeExe) {
+            Write-Host "[ERROR] claude.exe not found in wheel archive" -ForegroundColor Red
+            exit 1
+        }
+
+        Copy-Item -Path $claudeExe.FullName -Destination $Destination -Force
+
+        if (-not (Test-Path $Destination)) {
+            Write-Host "[ERROR] Failed to copy claude.exe to $Destination" -ForegroundColor Red
+            exit 1
+        }
+
+        $exeSize = (Get-Item $Destination).Length
+        $exeSizeStr = if ($exeSize -ge 1MB) { "{0:N1} MB" -f ($exeSize / 1MB) } else { "{0:N0} KB" -f ($exeSize / 1KB) }
+        Write-Host "[OK] Extracted: $Destination ($exeSizeStr)" -ForegroundColor Green
+    } finally {
+        if (Test-Path $whlDir) {
+            Remove-Item -Path $whlDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
     }
-
-    if (-not (Test-Path $Destination)) {
-        Write-Host "[ERROR] claude.exe not found at $Destination after extraction" -ForegroundColor Red
-        exit 1
-    }
-
-    # Clean up temporary uv cache
-    $prevEAP = $ErrorActionPreference
-    $ErrorActionPreference = 'Continue'
-    & $UvExe cache prune 2>$null
-    $ErrorActionPreference = $prevEAP
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
