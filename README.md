@@ -84,6 +84,7 @@ omc 依赖的引导级工具，独立脚本，通过 dot-source 调度。
 | bat | cat 替代品，语法高亮和 Git 集成 |
 | ast-grep | AST 结构化代码搜索、lint 和重写（`sg` 别名） |
 | bun | JavaScript 运行时、打包器、测试运行器和包管理器（npmmirror 镜像源） |
+| typst | 基于标记的排版系统，内置数学排版、脚本系统和增量编译（raystyle/typst fork） |
 | duckdb | DuckDB CLI（独立脚本） |
 
 ### 开发工具（Dev Tools）

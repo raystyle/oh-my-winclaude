@@ -98,6 +98,7 @@ $ToolDefs = @(
     'bat'
     'ast-grep'
     'bun'
+    'typst'
 )
 
 $ToolScripts = @(

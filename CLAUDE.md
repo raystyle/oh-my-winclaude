@@ -57,7 +57,8 @@ $BaseTools = @('7z', 'git', 'gh', 'aria2')    # 数据驱动，.envs\base\bin
 
 $ToolDefs = @(                               # 数据驱动，.envs\tools\bin
     'ripgrep', 'jq', 'yq', 'fzf',
-    'mq', 'just', 'starship', 'rumdl', 'nushell', 'conclaude', 'bun'
+    'mq', 'just', 'starship', 'rumdl', 'nushell', 'conclaude', 'bun',
+    'typst'
 )
 
 $ToolScripts = @('duckdb')                  # 独立脚本
@@ -119,6 +120,7 @@ $PsModules = @{                               # 通过 psanalyzer.ps1 管理
 - **bat** — cat 替代品（语法高亮）
 - **ast-grep** — AST 结构化代码搜索（`sg` 别名）
 - **bun** — JavaScript 运行时和包管理器
+- **typst** — 基于标记的排版系统（raystyle/typst fork）
 
 ### 工具脚本（`$ToolScripts`）— `.scripts/tools/*.ps1`
 
