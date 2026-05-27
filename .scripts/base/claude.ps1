@@ -130,7 +130,7 @@ function Set-ClaudeLock {
 function Get-SdkLatestVersion {
     <#
     .SYNOPSIS
-        Query PyPI for the latest claude-agent-sdk version.
+        Query PyPI for the latest claude-agent-sdk version, with mirror fallback.
     #>
     [CmdletBinding()]
     [OutputType([string])]
@@ -138,12 +138,20 @@ function Get-SdkLatestVersion {
 
     if (-not (Test-Path $UvExe)) { return }
 
-    $prevEAP = $ErrorActionPreference
-    $ErrorActionPreference = 'Continue'
-    $output = & $UvExe run python -m pip index versions $SdkPackage 2>$null | Out-String
-    $ErrorActionPreference = $prevEAP
+    $mirrors = @(
+        @{ Name = "tuna"; Args = @('-i', 'https://pypi.tuna.tsinghua.edu.cn/simple', '--trusted-host', 'pypi.tuna.tsinghua.edu.cn') }
+        @{ Name = "aliyun"; Args = @('-i', 'https://mirrors.aliyun.com/pypi/simple', '--trusted-host', 'mirrors.aliyun.com') }
+    )
 
-    if ($output -match "$SdkPackage\s*\((\d+\.\d+\.\d+)\)") { return $Matches[1] }
+    foreach ($mirror in $mirrors) {
+        $prevEAP = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        $allArgs = @('run', '--no-project', '--python', '3.12', 'python', '-m', 'pip', 'index', 'versions') + $mirror.Args + $SdkPackage
+        $output = & $UvExe @allArgs 2>$null | Out-String
+        $ErrorActionPreference = $prevEAP
+
+        if ($output -match "$SdkPackage\s*\((\d+\.\d+\.\d+)\)") { return $Matches[1] }
+    }
 }
 
 function Remove-ClaudeLock {
@@ -192,19 +200,45 @@ function Invoke-ClaudeExtract {
     $sdkLabel = if ($SdkVersion) { "$SdkPackage $SdkVersion" } else { "$SdkPackage (latest)" }
     Write-Host "[INFO] Downloading $sdkLabel wheel ..." -ForegroundColor Cyan
 
+    # PyPI mirror fallback: tuna -> aliyun
+    $pypiMirrors = @(
+        @{ Name = "tuna"; Index = "https://pypi.tuna.tsinghua.edu.cn/simple" }
+        @{ Name = "aliyun"; Index = "https://mirrors.aliyun.com/pypi/simple" }
+    )
+
     # Download whl to a temp directory via uv pip download
     $whlDir = Join-Path $CacheDir "whl-$([guid]::NewGuid().ToString('N').Substring(0,8))"
     try {
         New-Item -ItemType Directory -Path $whlDir -Force | Out-Null
 
-        $prevEAP = $ErrorActionPreference
-        $ErrorActionPreference = 'Continue'
-        $dlOutput = & $UvExe run --no-project --python 3.12 python -m pip download --no-deps --only-binary :all: -d $whlDir $spec 2>&1 | Out-String
-        $exitCode = $LASTEXITCODE
-        $ErrorActionPreference = $prevEAP
+        $exitCode = 1
+        $dlOutput = ""
+        foreach ($mirror in $pypiMirrors) {
+            $mirrorArgs = @(
+                'run', '--no-project', '--python', '3.12',
+                'python', '-m', 'pip', 'download',
+                '--no-deps', '--only-binary', ':all:',
+                '-d', $whlDir
+            )
+            if ($mirror.Index) {
+                $mirrorArgs += @('-i', $mirror.Index, '--trusted-host', ([System.Uri]$mirror.Index).Host)
+                Write-Host "[INFO] Trying $($mirror.Name) mirror ..." -ForegroundColor DarkGray
+            }
+            $mirrorArgs += $spec
+
+            $prevEAP = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
+            $dlOutput = & $UvExe @mirrorArgs 2>&1 | Out-String
+            $exitCode = $LASTEXITCODE
+            $ErrorActionPreference = $prevEAP
+
+            if ($exitCode -eq 0) { break }
+
+            Write-Host "[WARN] $($mirror.Name) download failed, trying next mirror ..." -ForegroundColor Yellow
+        }
 
         if ($exitCode -ne 0) {
-            Write-Host "[ERROR] uv pip download failed for $sdkLabel" -ForegroundColor Red
+            Write-Host "[ERROR] All mirrors failed for $sdkLabel" -ForegroundColor Red
             Write-Host "  $dlOutput" -ForegroundColor DarkGray
             exit 1
         }
@@ -338,8 +372,13 @@ $script:ConfigItems = @{
         Type = "env"
     }
     DISABLE_AUTO_COMPACT = @{
-        Default = "1"
-        Description = "Disable automatic context compaction"
+        Default = "0"
+        Description = "Disable automatic context compaction (0 = enabled)"
+        Type = "env"
+    }
+    CLAUDE_AUTOCOMPACT_PCT_OVERRIDE = @{
+        Default = "80"
+        Description = "Auto-compact trigger threshold (percentage of context window)"
         Type = "env"
     }
     DISABLE_FEEDBACK_SURVEY = @{
@@ -563,11 +602,18 @@ function Show-ConfigStatus {
         try {
             $s = Get-Content $script:ClaudeSettingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
             $simpleKeys = @('showThinkingSummaries', 'viewMode', 'alwaysThinkingEnabled',
-                            'effortLevel', 'autoMemoryEnabled')
+                            'effortLevel', 'autoMemoryEnabled', 'compactPrompt')
             foreach ($sk in $simpleKeys) {
                 $val = $s.PSObject.Properties | Where-Object { $_.Name -eq $sk }
                 if ($null -ne $val -and $null -ne $val.Value) {
-                    Write-Host "  [OK] $sk = $($val.Value)" -ForegroundColor Green
+                    $display = $val.Value
+                    if ($display -is [string] -and $display.Contains("`n")) {
+                        $preview = $display.Split("`n")[0]
+                        if ($preview.Length -gt 80) { $preview = $preview.Substring(0, 80) + "..." }
+                        Write-Host "  [OK] $sk = $preview..." -ForegroundColor Green
+                    } else {
+                        Write-Host "  [OK] $sk = $display" -ForegroundColor Green
+                    }
                 } else {
                     Write-Host "  [INFO] $sk = (not set)" -ForegroundColor Yellow
                 }
@@ -640,6 +686,17 @@ $script:ClaudeSettingsDefaults = [ordered]@{
     alwaysThinkingEnabled  = $false
     effortLevel            = 'medium'
     autoMemoryEnabled      = $true
+    compactPrompt          = @(
+        'When compacting the context (whether automatic or manual), you MUST strictly preserve:'
+        '1. All architectural decisions and their rationale'
+        '2. Current todo list / open tasks with status'
+        '3. Core file paths, modified files list, and key summaries'
+        '4. Constraints and rules from CLAUDE.md'
+        '5. Progress summaries and critical decisions'
+        ''
+        'You MAY summarize: tool outputs (keep only conclusions), exploratory steps (keep key outcomes).'
+        'Do not omit architecture, todo items, or CLAUDE.md rules.'
+    ) -join "`n"
     permissions            = [ordered]@{
         allow = [string[]]@(
             'Read(*)'
