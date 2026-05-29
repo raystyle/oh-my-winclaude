@@ -2319,7 +2319,7 @@ function Invoke-ClaudeHack {
 function Initialize-DefaultProfiles {
     <#
     .SYNOPSIS
-        Ensure built-in GLM and DeepSeek profile files exist.
+        Ensure built-in GLM, DeepSeek, and Zyun profile files exist.
     #>
     [CmdletBinding()]
     [OutputType([void])]
@@ -2365,6 +2365,26 @@ function Initialize-DefaultProfiles {
                 CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING   = "0"
                 CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY = "1"
                 CLAUDE_CODE_SUBAGENT_MODEL              = "deepseek-v4-flash"
+            }
+            settings    = [ordered]@{
+                alwaysThinkingEnabled = $true
+                effortLevel           = "max"
+            }
+        }
+        Zyun = @{
+            name        = "Zyun"
+            description = "Zyun Claude Opus 4.8 via zyuncs.com"
+            env         = [ordered]@{
+                ANTHROPIC_AUTH_TOKEN                    = ""
+                ANTHROPIC_BASE_URL                      = "https://llm.api.zyuncs.com"
+                ANTHROPIC_DEFAULT_HAIKU_MODEL           = "anthropic/claude-opus-4.8"
+                ANTHROPIC_DEFAULT_SONNET_MODEL          = "anthropic/claude-opus-4.8"
+                ANTHROPIC_DEFAULT_OPUS_MODEL            = "anthropic/claude-opus-4.8"
+                CLAUDE_CODE_DISABLE_1M_CONTEXT          = "1"
+                CLAUDE_CODE_DISABLE_INTERLEAVED_THINKING = "0"
+                CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING   = "0"
+                CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY = "1"
+                CLAUDE_CODE_SUBAGENT_MODEL              = "anthropic/claude-opus-4.8"
             }
             settings    = [ordered]@{
                 alwaysThinkingEnabled = $true
