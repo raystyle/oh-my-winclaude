@@ -818,6 +818,11 @@ function Set-DefaultConfig {
     $changed = $false
 
     foreach ($key in $script:ConfigItems.Keys) {
+        # Provider-specific keys (base URL, models, 1M/thinking flags, subagent)
+        # are owned by the active profile, not by the generic defaults. Skipping
+        # them here keeps Set-DefaultConfig from clobbering the active profile.
+        if ($script:ProfileEnvKeys -contains $key) { continue }
+
         $item = $script:ConfigItems[$key]
         if ($item.Required -and -not $item.Default) { continue }
 
@@ -1167,8 +1172,16 @@ function Invoke-ClaudeConfig {
 
     $isFullyConfigured = $hasApiConfig -and $hasModelConfig
 
-    # Env vars are always idempotent — apply defaults silently
+    # Apply generic idempotent defaults (timeouts, encoding, telemetry, etc.).
+    # Provider keys are excluded from Set-DefaultConfig and owned by the profile.
     Set-DefaultConfig
+
+    # Apply the active profile so provider env (base URL, models, flags) and
+    # profile-managed settings are set directly from the profile.
+    $activeProfile = Get-ActiveProfile
+    if ($activeProfile) {
+        Switch-ClaudeProfile -Name $activeProfile
+    }
 
     # Handle based on scope
     switch ($Scope) {
@@ -2377,14 +2390,14 @@ function Initialize-DefaultProfiles {
             env         = [ordered]@{
                 ANTHROPIC_AUTH_TOKEN                    = ""
                 ANTHROPIC_BASE_URL                      = "https://llm.api.zyuncs.com"
-                ANTHROPIC_DEFAULT_HAIKU_MODEL           = "anthropic/claude-opus-4.8"
-                ANTHROPIC_DEFAULT_SONNET_MODEL          = "anthropic/claude-opus-4.8"
-                ANTHROPIC_DEFAULT_OPUS_MODEL            = "anthropic/claude-opus-4.8"
-                CLAUDE_CODE_DISABLE_1M_CONTEXT          = "1"
+                ANTHROPIC_DEFAULT_HAIKU_MODEL           = "anthropic/claude-opus-4.8[1m]"
+                ANTHROPIC_DEFAULT_SONNET_MODEL          = "anthropic/claude-opus-4.8[1m]"
+                ANTHROPIC_DEFAULT_OPUS_MODEL            = "anthropic/claude-opus-4.8[1m]"
+                CLAUDE_CODE_DISABLE_1M_CONTEXT          = "0"
                 CLAUDE_CODE_DISABLE_INTERLEAVED_THINKING = "0"
                 CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING   = "0"
                 CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY = "1"
-                CLAUDE_CODE_SUBAGENT_MODEL              = "anthropic/claude-opus-4.8"
+                CLAUDE_CODE_SUBAGENT_MODEL              = "anthropic/claude-opus-4.8[1m]"
             }
             settings    = [ordered]@{
                 alwaysThinkingEnabled = $true
