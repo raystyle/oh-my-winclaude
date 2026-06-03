@@ -58,3 +58,9 @@ paths:
 
 - **R04.10** `[TOOL_LIFECYCLE]` **调用 `core.ps1` 生命周期函数前必须加载 `core.ps1`。** 只 dot-source `helpers.ps1` 调用 `Import-ToolDefinition` 报错。
   - 修复：`Invoke-Init` 同时 dot-source `helpers.ps1` 和 `core.ps1`。
+
+- **R04.11** `[TOOL_LIFECYCLE]` **cache-hit 判断必须校验版本，不能只比归档名 + hash。** `GetArchiveName` 返回固定名（如 bun 的 `bun-windows-x64.zip`）的工具，升级时旧 zip 的名字和 hash 都与 config 匹配，`Invoke-ToolDownload` 直接 return 旧缓存，导致升级空转、装回旧版本。
+  - 修复：cache-hit 条件加 `$dlConfig.lock -eq $Version`。`Invoke-ToolDownload` 下载成功后 `lock`/`asset`/`sha256` 一起写入，`lock` 始终反映缓存 zip 的真实版本，可作为 cache key。
+
+- **R04.12** `[TOOL_LIFECYCLE]` **`standalone` 解压 copy 失败必须 `exit 1`，不能继续。** Windows 下运行中的 exe 被占用时 copy 失败，但旧 exe 仍在原位 → 后续 `Test-Path $exePath` 通过 → `Set-ToolConfig -Lock $Version` 把锁改成新版本，造成"假升级"（lock 是新版、磁盘是旧版）。
+  - 修复：`$failed -gt 0` 分支输出 `[ERROR]` 并 `exit 1`，不落到 lock 更新。提示用户关闭占用进程后重试。

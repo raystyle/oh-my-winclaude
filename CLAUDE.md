@@ -21,6 +21,7 @@ omc download <工具> <版本>  # 下载指定版本到缓存
 omc lock <工具> [版本]      # 查看/锁定版本
 omc setup claude           # 配置 Claude Code（GUI 编辑器）
 omc switch claude          # 切换 Claude Code 配置 Profile
+omc sync <目标>            # 同步项目到目标目录（排除 .envs）
 omc help                   # 显示用法
 
 分组：base、tool、dev
@@ -53,12 +54,12 @@ omc.shim                 # Shim 配置 -> powershell.exe -File .scripts/omc.ps1
 ```powershell
 $BaseScripts = @('uv', 'claude')           # 独立引导脚本
 
-$BaseTools = @('7z', 'git', 'gh', 'aria2')    # 数据驱动，.envs\base\bin
+$BaseTools = @('gh', '7z', 'git', 'aria2')    # 数据驱动，.envs\base\bin（gh 优先，见 R03.6）
 
 $ToolDefs = @(                               # 数据驱动，.envs\tools\bin
     'ripgrep', 'jq', 'yq', 'fzf',
-    'mq', 'just', 'starship', 'rumdl', 'nushell', 'conclaude', 'bun',
-    'typst'
+    'mq', 'just', 'starship', 'rumdl', 'nushell', 'conclaude',
+    'bat', 'ast-grep', 'bun', 'typst'
 )
 
 $ToolScripts = @('duckdb')                  # 独立脚本
@@ -98,9 +99,9 @@ $PsModules = @{                               # 通过 psanalyzer.ps1 管理
 
 数据驱动，通过 `core.ps1` 生命周期引擎调度，安装到 `.envs\base\bin`。
 
+- **gh** — GitHub CLI
 - **7z** — 7-Zip
 - **git** — Git for Windows
-- **gh** — GitHub CLI
 - **aria2** — 多线程下载工具
 
 ### 工具定义（`$ToolDefs`）— `.scripts/tools/*.ps1`
