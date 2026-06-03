@@ -624,8 +624,14 @@ function Invoke-ToolDownload {
         }
     }
 
-    # Cache hit: verify against config hash
-    if ($dlConfig.asset -eq $archiveName -and $dlConfig.sha256 -and (Test-Path $zipFile)) {
+    # Cache hit: verify archive name, hash, AND cached version.
+    # The version check matters for tools whose GetArchiveName returns a
+    # fixed, version-less name (e.g. bun's "bun-windows-x64.zip"): without it,
+    # an upgrade would match the old archive by name+hash and reuse the stale
+    # zip, silently installing the previous version. lock/asset/sha256 are
+    # written together on download (see below), so lock reflects the cached zip.
+    if ($dlConfig.asset -eq $archiveName -and $dlConfig.sha256 -and
+        $dlConfig.lock -eq $Version -and (Test-Path $zipFile)) {
         $actualHash = (Get-FileHash -Path $zipFile -Algorithm SHA256).Hash
         if ($actualHash -eq $dlConfig.sha256) {
             $size = (Get-Item $zipFile).Length
@@ -915,7 +921,12 @@ function Invoke-ToolInstall {
                     Write-Host "[WARN] No matching files from archive, copying all" -ForegroundColor Yellow
                     Copy-Item -Path "$sourceDir\*" -Destination $binDir -Recurse -Force
                 } elseif ($failed -gt 0) {
-                    Write-Host "[INFO] Extracted $kept file(s), $failed failed (file in use — close the process and re-run)" -ForegroundColor DarkGray
+                    # A failed copy (typically the target exe is locked by a
+                    # running process) must abort: otherwise the old binary
+                    # stays in place, Test-Path below still passes, and lock
+                    # gets bumped to the new version — a silent "fake upgrade".
+                    Write-Host "[ERROR] $failed file(s) failed to copy (file in use — close the process using $($ToolDef.ExeName) and re-run)" -ForegroundColor Red
+                    exit 1
                 } elseif ($kept -gt 0) {
                     Write-Host "[INFO] Extracted $kept file(s)" -ForegroundColor DarkGray
                 }
@@ -1165,6 +1176,11 @@ function Invoke-ToolUninstall {
     if ($ToolDef.PostUninstall) {
         & $ToolDef.PostUninstall -ToolDef $ToolDef -RootDir $global:Tool_RootDir
     }
+
+    # Clear version lock and cache metadata so a later reinstall fetches the
+    # latest release instead of pinning to the previously locked/cached version.
+    Set-ToolConfig -ToolDef $ToolDef -Lock '' -Asset '' -Sha256 ''
+    Write-Host "[OK] Cleared version lock and cache metadata" -ForegroundColor Green
 
     Write-Host "[OK] $label uninstalled" -ForegroundColor Green
 }

@@ -10,6 +10,7 @@ return @{
     TagPrefix      = 'bun-v'
     GetArchiveName = { param($v) "bun-windows-x64.zip" }
     ExtractType    = 'standalone'
+    ArchiveSubdir  = 'bun-windows-x64'
     GetSetupDir    = { param($r) "$r\.config\bun" }
     GetBinDir      = { param($r) "$r\.envs\tools\bin" }
     VersionCommand = '--version'

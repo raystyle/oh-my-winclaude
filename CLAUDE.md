@@ -16,7 +16,7 @@ omc init                   # 首次引导（prefix、PATH、hosts）
 omc check [工具|分组]       # 显示安装状态、锁定版本、缓存
 omc install [工具|分组]     # 安装锁定版本（已安装则跳过）
 omc update [工具|分组]      # 获取最新版并升级
-omc uninstall [工具|分组]   # 卸载工具（保留锁定和缓存）
+omc uninstall [工具|分组]   # 卸载工具（清除锁定和缓存元数据）
 omc download <工具> <版本>  # 下载指定版本到缓存
 omc lock <工具> [版本]      # 查看/锁定版本
 omc setup claude           # 配置 Claude Code（GUI 编辑器）
