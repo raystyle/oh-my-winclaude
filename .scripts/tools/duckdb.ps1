@@ -639,8 +639,10 @@ function Invoke-DuckdbExtInstall {
         # Download via DuckDB CLI FORCE INSTALL
         Write-Host "[INFO] Downloading $ext..." -ForegroundColor Cyan
 
+        # extension_directory must be set for both code paths; computing it
+        # only inside the community branch left it empty for built-in extensions.
+        $extDirSql = $dirs.extDir -replace '\\', '/'
         if ($ext -in $extCommunityExts) {
-            $extDirSql = $dirs.extDir -replace '\\', '/'
             $sql = "SET extension_directory='$extDirSql'; FORCE INSTALL $ext FROM community;"
         } else {
             $sql = "SET extension_directory='$extDirSql'; FORCE INSTALL $ext;"
