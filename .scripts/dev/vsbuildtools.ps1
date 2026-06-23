@@ -242,9 +242,11 @@ function Invoke-VSDownload {
     $layoutArgs = @(
         "--layout", "VSLayout",
         "--lang", "en-US",
+        "--add", "Microsoft.VisualStudio.Workload.VCTools",
         "--add", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
         "--add", "Microsoft.VisualStudio.Component.Windows11SDK.26100",
-        "--passive", "--wait"
+        "--includeRecommended",
+        "--wait"
     )
 
     $proc = Start-Process -FilePath $Bootstrapper -ArgumentList $layoutArgs `
@@ -329,9 +331,11 @@ function Invoke-VSInstall {
     $installArgs = @(
         "--noWeb",
         "--installPath", $script:VSBuildTools_InstallPath,
+        "--add", "Microsoft.VisualStudio.Workload.VCTools",
         "--add", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
         "--add", "Microsoft.VisualStudio.Component.Windows11SDK.26100",
-        "--passive", "--wait"
+        "--includeRecommended",
+        "--quiet", "--norestart"
     )
 
     Write-Host "[INFO] Running installer (this may take 10-30 minutes)..." -ForegroundColor Cyan
